@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Articles{% endblock %}
+{% block page_title %}Articles{% endblock %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:0.5rem;">
+    <a href="/articles/json" class="btn btn-ghost"><i class="ri-code-s-slash-line"></i> Push JSON</a>
+    <a href="/articles/new" class="btn btn-primary"><i class="ri-add-line"></i> New Article</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-body" style="padding:0.85rem 1.25rem;">
+        <div class="filters">
+            <div class="search-bar" style="flex:1;min-width:180px;">
+                <i class="ri-search-line"></i>
+                <input type="text" class="form-control" placeholder="Search articles..." id="search-input" oninput="filterArticles()">
+            </div>
+            <select class="form-control" style="width:160px;" id="filter-status" onchange="filterArticles()">
+                <option value="">All Status</option>
+                <option value="published">Published</option>
+                <option value="draft">Draft</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div style="overflow-x:auto;">
+        <table class="data-table">
+            <thead><tr>
+                <th style="width:30%">Title</th>
+                <th style="width:11%">Category</th>
+                <th style="width:11%">Author</th>
+                <th style="width:9%">Status</th>
+                <th style="width:13%">Published</th>
+                <th style="width:7%">Views</th>
+                <th style="width:80px">Actions</th>
+            </tr></thead>
+            <tbody id="articles-body">
+                <tr><td colspan="7" class="empty-state">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allArticles = [];
+
+async function loadArticles() {
+    try {
+        allArticles = await apiCall('/api/v1/admin/articles');
+        renderArticles(allArticles);
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+function renderArticles(articles) {
+    const tbody = document.getElementById('articles-body');
+    if (!articles.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No articles found</td></tr>';
+        return;
+    }
+    tbody.innerHTML = articles.map((a, i) => `<tr>
+        <td><div class="truncate">${esc(a.title)}</div></td>
+        <td><span class="badge badge-violet">${esc(a.category?.name || '—')}</span></td>
+        <td>${esc(a.author?.name || '—')}</td>
+        <td><span class="badge badge-${a.status === 'published' ? 'published' : 'draft'}">${esc(a.status)}</span></td>
+        <td>${formatDate(a.published_at)}</td>
+        <td>${(a.view_count || 0).toLocaleString()}</td>
+        <td>
+            <div class="action-btns">
+                <a href="/articles/${a._id}/edit" class="action-btn" title="Edit"><i class="ri-pencil-line"></i></a>
+                <button class="action-btn delete" onclick="delArticle('${a._id}')" title="Delete"><i class="ri-delete-bin-line"></i></button>
+            </div>
+        </td>
+    </tr>`).join('');
+}
+
+function filterArticles() {
+    const q = document.getElementById('search-input').value.toLowerCase();
+    const s = document.getElementById('filter-status').value;
+    let f = allArticles;
+    if (q) f = f.filter(a => a.title.toLowerCase().includes(q));
+    if (s) f = f.filter(a => a.status === s);
+    renderArticles(f);
+}
+
+async function delArticle(id) {
+    if (!confirm('Delete this article?')) return;
+    try { await apiCall('/api/v1/admin/articles/' + id, 'DELETE'); showToast('Article deleted'); loadArticles(); }
+    catch (e) { showToast(e.message, 'error'); }
+}
+
+loadArticles();
+</script>
+{% endblock %}

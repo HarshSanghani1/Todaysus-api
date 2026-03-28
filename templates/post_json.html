@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Push JSON Article{% endblock %}
+{% block page_title %}Push JSON Article{% endblock %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:0.75rem;">
+    <a href="/articles" class="btn btn-ghost"><i class="ri-arrow-left-s-line"></i> Back</a>
+    <a href="/articles/new" class="btn btn-ghost"><i class="ri-file-edit-line"></i> Form Mode</a>
+    <button class="btn btn-primary" onclick="pushJson()"><i class="ri-upload-2-line"></i> Push JSON</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fade-in" style="display:grid;grid-template-columns:1fr 360px;gap:2rem;align-items:start;">
+
+    <!-- JSON Editor -->
+    <div class="card" style="min-height:700px;display:flex;flex-direction:column;">
+        <div class="card-header">
+            <h3><i class="ri-code-s-slash-line"></i> Raw JSON Payload</h3>
+            <div style="display:flex;gap:0.5rem;">
+                <button class="btn btn-ghost btn-sm" onclick="loadTemplate()"><i class="ri-file-copy-line"></i> Load Template</button>
+                <button class="btn btn-ghost btn-sm" onclick="validateJson()"><i class="ri-check-double-line"></i> Validate</button>
+            </div>
+        </div>
+        <div class="card-body" style="flex:1;padding:0;">
+            <textarea id="json_raw" class="form-control" 
+                placeholder='Paste your complete article JSON here...'
+                style="width:100%;height:700px;border:none;padding:1.5rem;font-family:'JetBrains Mono',monospace;font-size:0.85rem;line-height:1.7;background:var(--base);resize:none;"></textarea>
+        </div>
+    </div>
+
+    <!-- Help Panel -->
+    <div style="display:flex;flex-direction:column;gap:1.5rem;position:sticky;top:5rem;">
+        
+        <div class="card" style="border-top:3px solid var(--secondary-container);">
+            <div class="card-header"><h3><i class="ri-information-line"></i> JSON Schema</h3></div>
+            <div class="card-body" style="font-size:0.78rem;color:var(--on-surface-variant);line-height:1.6;">
+                <div style="margin-bottom:0.75rem;">
+                    <strong style="color:var(--on-surface);">Required Fields:</strong>
+                    <ul style="padding-left:1rem;margin-top:0.25rem;">
+                        <li><code style="color:var(--primary);">title</code> — Article headline</li>
+                        <li><code style="color:var(--primary);">author</code> — Object: {id, slug, name}</li>
+                        <li><code style="color:var(--primary);">category</code> — Object: {id, slug, name}</li>
+                    </ul>
+                </div>
+                <div style="margin-bottom:0.75rem;">
+                    <strong style="color:var(--on-surface);">Content:</strong>
+                    <ul style="padding-left:1rem;margin-top:0.25rem;">
+                        <li><code style="color:var(--tertiary);">excerpt</code> — Summary text</li>
+                        <li><code style="color:var(--tertiary);">content_html</code> — Full HTML body</li>
+                    </ul>
+                </div>
+                <div>
+                    <strong style="color:var(--on-surface);">Optional:</strong>
+                    <ul style="padding-left:1rem;margin-top:0.25rem;">
+                        <li><code>status</code> — "published" / "draft"</li>
+                        <li><code>type</code> — news / analysis / opinion</li>
+                        <li><code>topics</code> — [{name, slug}]</li>
+                        <li><code>featured_image</code> — URL string</li>
+                        <li><code>is_featured</code> — boolean</li>
+                        <li><code>seo_title</code> — SEO title</li>
+                        <li><code>seo_description</code> — SEO desc</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Available Authors -->
+        <div class="card">
+            <div class="card-header"><h3><i class="ri-quill-pen-line"></i> Authors</h3></div>
+            <div class="card-body" id="authors-ref" style="font-size:0.78rem;color:var(--outline);">Loading...</div>
+        </div>
+
+        <!-- Available Categories -->
+        <div class="card">
+            <div class="card-header"><h3><i class="ri-folder-3-line"></i> Categories</h3></div>
+            <div class="card-body" id="cats-ref" style="font-size:0.78rem;color:var(--outline);">Loading...</div>
+        </div>
+
+        <!-- Validation Status -->
+        <div class="card" id="validation-card" style="display:none;">
+            <div class="card-body" id="validation-result"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    code { background:var(--surface-2); padding:1px 5px; border-radius:3px; font-size:0.78rem; }
+</style>
+<script>
+let authorsData = [];
+let catsData = [];
+
+(async () => {
+    try {
+        authorsData = await apiCall('/api/v1/admin/authors');
+        document.getElementById('authors-ref').innerHTML = authorsData.map(a => 
+            `<div style="display:flex;justify-content:space-between;padding:0.35rem 0;border-bottom:1px solid var(--ghost);">
+                <span style="color:var(--on-surface-variant);">${esc(a.name)}</span>
+                <code>${esc(a.slug)}</code>
+            </div>`
+        ).join('') || 'No authors';
+    } catch(e) {}
+
+    try {
+        catsData = await apiCall('/api/v1/admin/categories');
+        document.getElementById('cats-ref').innerHTML = catsData.map(c => 
+            `<div style="display:flex;justify-content:space-between;padding:0.35rem 0;border-bottom:1px solid var(--ghost);">
+                <span style="color:var(--on-surface-variant);">${esc(c.name)}</span>
+                <code>${esc(c.slug)}</code>
+            </div>`
+        ).join('') || 'No categories';
+    } catch(e) {}
+})();
+
+function loadTemplate() {
+    const author = authorsData[0] || {slug: 'author-slug', name: 'Author Name'};
+    const cat = catsData[0] || {slug: 'category-slug', name: 'Category Name'};
+    const template = {
+        title: "Article Headline Here",
+        slug: "article-headline-here",
+        excerpt: "Brief summary of the article...",
+        content_html: "<h2>Section Title</h2><p>Article content goes here with full HTML support.</p>",
+        author: { id: author.slug, slug: author.slug, name: author.name },
+        category: { id: cat.slug, slug: cat.slug, name: cat.name },
+        topics: [{ name: "Topic Name", slug: "topic-name" }],
+        type: "news",
+        status: "published",
+        is_featured: false,
+        featured_image: null,
+        seo_title: "SEO Title",
+        seo_description: "SEO description for search engines"
+    };
+    document.getElementById('json_raw').value = JSON.stringify(template, null, 4);
+    showToast('Template loaded — edit and push!');
+}
+
+function validateJson() {
+    const card = document.getElementById('validation-card');
+    const result = document.getElementById('validation-result');
+    card.style.display = 'block';
+    
+    try {
+        const data = JSON.parse(document.getElementById('json_raw').value);
+        const errors = [];
+        if (!data.title) errors.push('Missing: title');
+        if (!data.author) errors.push('Missing: author object');
+        if (!data.category) errors.push('Missing: category object');
+        if (!data.content_html) errors.push('Warning: no content_html');
+        
+        if (errors.length) {
+            result.innerHTML = `<div style="color:var(--tertiary);font-size:0.8rem;"><i class="ri-error-warning-line"></i> ${errors.join('<br>')}</div>`;
+        } else {
+            result.innerHTML = `<div style="color:var(--secondary);font-size:0.8rem;"><i class="ri-check-line"></i> JSON is valid — ready to push!</div>`;
+        }
+    } catch(e) {
+        result.innerHTML = `<div style="color:var(--error);font-size:0.8rem;"><i class="ri-close-circle-line"></i> Invalid JSON: ${esc(e.message)}</div>`;
+    }
+}
+
+async function pushJson() {
+    const raw = document.getElementById('json_raw').value.trim();
+    if (!raw) { showToast('Paste JSON first', 'error'); return; }
+    
+    try {
+        const data = JSON.parse(raw);
+        await apiCall('/api/v1/admin/articles', 'POST', data);
+        showToast('Article created via JSON!');
+        setTimeout(() => { location.href = '/articles'; }, 800);
+    } catch(e) {
+        if (e instanceof SyntaxError) showToast('Invalid JSON syntax', 'error');
+        else showToast(e.message, 'error');
+    }
+}
+</script>
+{% endblock %}

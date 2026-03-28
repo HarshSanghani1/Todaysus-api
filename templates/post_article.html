@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Article' if article_id else 'New Article' }}{% endblock %}
+{% block page_title %}{{ 'Edit Article' if article_id else 'New Article' }}{% endblock %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:0.75rem;">
+    <a href="/articles" class="btn btn-ghost"><i class="ri-arrow-left-s-line"></i> Back</a>
+    <button class="btn btn-ghost" onclick="submitArticle('draft')"><i class="ri-draft-line"></i> Save Draft</button>
+    <button class="btn btn-primary" onclick="submitArticle('published')"><i class="ri-send-plane-fill"></i> Publish</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fade-in" style="display:grid;grid-template-columns:1fr 340px;gap:2rem;align-items:start;">
+    
+    <!-- Main Editor -->
+    <div style="display:flex;flex-direction:column;gap:1.5rem;">
+        
+        <!-- Title & Excerpt -->
+        <div class="card" style="background:var(--surface-1);border:none;box-shadow:none;">
+            <div class="card-body" style="padding:2rem;">
+                <input type="text" id="title" placeholder="Enter article headline..." 
+                    style="background:transparent;border:none;border-bottom:1px solid var(--ghost);width:100%;font-size:2.2rem;font-weight:800;color:var(--on-surface);letter-spacing:-0.035em;padding-bottom:1rem;margin-bottom:1.5rem;outline:none;font-family:inherit;">
+                
+                <div class="form-group" style="margin-bottom:0;">
+                    <label style="font-size:0.65rem;opacity:0.6;">Excerpt</label>
+                    <textarea id="excerpt" rows="2" class="form-control" placeholder="Brief summary of the article..." 
+                        style="background:transparent;border:none;border-left:2px solid var(--primary-container);border-radius:0;padding:0.2rem 1rem;font-size:0.95rem;color:var(--on-surface-variant);min-height:auto;"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content Editor with Visual / HTML Source tabs -->
+        <div class="card" style="min-height:500px;display:flex;flex-direction:column;">
+            <div class="card-header" style="border-bottom:1px solid var(--ghost);">
+                <h3><i class="ri-edit-box-line"></i> Article Content</h3>
+                <div class="tab-group">
+                    <div class="tab" id="tab-html" onclick="switchTab('html')" style="cursor:pointer;">HTML Source</div>
+                    <div class="tab active" id="tab-visual" onclick="switchTab('visual')" style="cursor:pointer;">Visual Preview</div>
+                </div>
+            </div>
+            <div class="card-body" style="flex:1;padding:0;position:relative;min-height:600px;">
+                <!-- HTML Source textarea -->
+                <textarea id="content_html" class="form-control" 
+                    placeholder="Write your article content here with HTML tags..."
+                    style="display:none;width:100%;height:600px;border:none;padding:2rem;font-family:'JetBrains Mono',monospace;font-size:0.85rem;line-height:1.7;background:var(--base);resize:none;"></textarea>
+                
+                <!-- Visual Preview (rendered HTML) -->
+                <div id="visual-preview" style="padding:2rem;min-height:600px;background:var(--base);overflow-y:auto;">
+                    <div id="visual-content" style="max-width:720px;font-size:0.95rem;line-height:1.8;color:var(--on-surface-variant);">
+                        <p style="color:var(--outline);font-style:italic;">Start writing in HTML Source tab, then switch here to preview...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div style="display:flex;flex-direction:column;gap:1.5rem;position:sticky;top:5rem;">
+        
+        <!-- Publishing -->
+        <div class="card" style="border-top:3px solid var(--primary-container);">
+            <div class="card-header"><h3><i class="ri-settings-4-line"></i> Publishing</h3></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:1rem;">
+                <div class="form-group">
+                    <label>Article Type</label>
+                    <select id="type" class="form-control">
+                        <option value="news">News</option>
+                        <option value="analysis">Analysis</option>
+                        <option value="opinion">Opinion</option>
+                        <option value="explainer">Explainer</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="status" class="form-control">
+                        <option value="draft">Draft</option>
+                        <option value="published">Published</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Attribution -->
+        <div class="card">
+            <div class="card-header"><h3><i class="ri-quill-pen-line"></i> Attribution</h3></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:1rem;">
+                <div class="form-group">
+                    <label>Author *</label>
+                    <select id="author" class="form-control">
+                        <option value="">Select Author...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Category *</label>
+                    <select id="category" class="form-control">
+                        <option value="">Select Category...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Topics (comma separated)</label>
+                    <input type="text" id="topics" class="form-control" placeholder="AI, Politics, Economy">
+                </div>
+            </div>
+        </div>
+
+        <!-- Media -->
+        <div class="card">
+            <div class="card-header"><h3><i class="ri-image-edit-line"></i> Featured Image</h3></div>
+            <div class="card-body">
+                <div id="image-preview" style="width:100%;height:140px;background:var(--base);border-radius:var(--radius-sm);margin-bottom:1rem;display:grid;place-items:center;overflow:hidden;border:1px dashed var(--ghost);">
+                    <i class="ri-image-2-line" style="font-size:2rem;opacity:0.2;"></i>
+                </div>
+                <input type="text" id="featured_image" class="form-control" placeholder="Paste Image URL" oninput="updateImage()">
+            </div>
+        </div>
+
+        <!-- Flags -->
+        <div class="card">
+            <div class="card-body">
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <span style="font-size:0.75rem;font-weight:600;opacity:0.8;">Featured Post</span>
+                    <input type="checkbox" id="is_featured" style="width:18px;height:18px;accent-color:var(--primary);">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<input type="hidden" id="article-id" value="{{ article_id or '' }}">
+{% endblock %}
+
+{% block scripts %}
+<style>
+    /* Visual preview styling */
+    #visual-content h1 { font-size:1.8rem;font-weight:800;margin:1.5rem 0 1rem;color:var(--on-surface);line-height:1.3; }
+    #visual-content h2 { font-size:1.45rem;font-weight:700;margin:1.5rem 0 0.75rem;color:var(--on-surface);line-height:1.3; }
+    #visual-content h3 { font-size:1.15rem;font-weight:600;margin:1.2rem 0 0.5rem;color:var(--on-surface); }
+    #visual-content p { margin-bottom:1rem;color:var(--on-surface-variant);line-height:1.8; }
+    #visual-content strong { color:var(--on-surface);font-weight:600; }
+    #visual-content em { font-style:italic; }
+    #visual-content ul, #visual-content ol { padding-left:1.5rem;margin-bottom:1rem; }
+    #visual-content li { margin-bottom:0.4rem;color:var(--on-surface-variant); }
+    #visual-content blockquote { border-left:3px solid var(--primary-container);padding:0.5rem 1rem;margin:1rem 0;color:var(--outline);background:var(--surface-1);border-radius:0 var(--radius-xs) var(--radius-xs) 0; }
+    #visual-content img { max-width:100%;border-radius:var(--radius-sm);margin:1rem 0; }
+    #visual-content a { color:var(--primary);text-decoration:underline; }
+    #visual-content table { width:100%;border-collapse:collapse;margin:1rem 0; }
+    #visual-content th, #visual-content td { padding:0.5rem 0.75rem;border:1px solid var(--ghost);text-align:left;font-size:0.85rem; }
+    #visual-content th { background:var(--surface-2);font-weight:600;color:var(--on-surface); }
+</style>
+<script>
+const articleId = document.getElementById('article-id').value;
+let currentTab = 'visual';
+
+// ── Tab switching ──
+function switchTab(tab) {
+    currentTab = tab;
+    const htmlArea = document.getElementById('content_html');
+    const visualArea = document.getElementById('visual-preview');
+    const tabHtml = document.getElementById('tab-html');
+    const tabVisual = document.getElementById('tab-visual');
+
+    if (tab === 'html') {
+        htmlArea.style.display = 'block';
+        visualArea.style.display = 'none';
+        tabHtml.classList.add('active');
+        tabVisual.classList.remove('active');
+    } else {
+        htmlArea.style.display = 'none';
+        visualArea.style.display = 'block';
+        tabHtml.classList.remove('active');
+        tabVisual.classList.add('active');
+        // Render the HTML content as visual preview
+        const html = htmlArea.value;
+        document.getElementById('visual-content').innerHTML = html || '<p style="color:var(--outline);font-style:italic;">No content yet. Write HTML in the Source tab first.</p>';
+    }
+}
+
+// Start on HTML Source tab by default
+switchTab('html');
+
+// ── Load data ──
+(async () => {
+    // Load Authors dropdown
+    try {
+        const authors = await apiCall('/api/v1/admin/authors');
+        const sel = document.getElementById('author');
+        authors.forEach(a => {
+            const o = document.createElement('option');
+            o.value = JSON.stringify({id: a.slug, slug: a.slug, name: a.name || a.display_name});
+            o.textContent = a.name || a.display_name;
+            sel.appendChild(o);
+        });
+    } catch(e) { console.error("Authors:", e); }
+
+    // Load Categories dropdown
+    try {
+        const cats = await apiCall('/api/v1/admin/categories');
+        const sel = document.getElementById('category');
+        cats.forEach(c => {
+            const o = document.createElement('option');
+            o.value = JSON.stringify({id: c.slug, slug: c.slug, name: c.name});
+            o.textContent = c.name;
+            sel.appendChild(o);
+        });
+    } catch(e) { console.error("Categories:", e); }
+
+    // Load article if editing
+    if (articleId) {
+        try {
+            const a = await apiCall('/api/v1/admin/articles/' + articleId);
+            document.getElementById('title').value = a.title || '';
+            document.getElementById('excerpt').value = a.excerpt || '';
+            document.getElementById('content_html').value = a.content_html || '';
+            document.getElementById('featured_image').value = a.featured_image || '';
+            document.getElementById('status').value = a.status || 'draft';
+            document.getElementById('type').value = a.type || 'news';
+            document.getElementById('is_featured').checked = !!a.is_featured;
+            document.getElementById('topics').value = (a.topics || []).map(t => typeof t === 'string' ? t : t.name).join(', ');
+
+            // Select author
+            if (a.author?.slug) {
+                const aSel = document.getElementById('author');
+                for (let o of aSel.options) {
+                    try { if (JSON.parse(o.value).slug === a.author.slug) { o.selected = true; break; } } catch(e) {}
+                }
+            }
+            // Select category
+            if (a.category?.slug) {
+                const cSel = document.getElementById('category');
+                for (let o of cSel.options) {
+                    try { if (JSON.parse(o.value).slug === a.category.slug) { o.selected = true; break; } } catch(e) {}
+                }
+            }
+            updateImage();
+        } catch(e) { showToast("Failed to load article: " + e.message, 'error'); }
+    }
+})();
+
+function updateImage() {
+    const url = document.getElementById('featured_image').value;
+    const pre = document.getElementById('image-preview');
+    if (url) pre.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`;
+    else pre.innerHTML = `<i class="ri-image-2-line" style="font-size:2rem;opacity:0.2;"></i>`;
+}
+
+async function submitArticle(forceStatus) {
+    const authorVal = document.getElementById('author').value;
+    if (!authorVal) { showToast("Select an author", 'error'); return; }
+    
+    const catVal = document.getElementById('category').value;
+    if (!catVal) { showToast("Select a category", 'error'); return; }
+
+    const title = document.getElementById('title').value.trim();
+    if (!title) { showToast("Title is required", 'error'); return; }
+
+    const topics = document.getElementById('topics').value.split(',').map(t => t.trim()).filter(Boolean).map(t => ({
+        name: t, slug: t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    }));
+
+    const data = {
+        title,
+        author: JSON.parse(authorVal),
+        category: JSON.parse(catVal),
+        excerpt: document.getElementById('excerpt').value,
+        content_html: document.getElementById('content_html').value,
+        featured_image: document.getElementById('featured_image').value || null,
+        status: forceStatus || document.getElementById('status').value,
+        type: document.getElementById('type').value,
+        topics,
+        is_featured: document.getElementById('is_featured').checked
+    };
+
+    try {
+        const method = articleId ? 'PUT' : 'POST';
+        const url = articleId ? ('/api/v1/admin/articles/' + articleId) : '/api/v1/admin/articles';
+        await apiCall(url, method, data);
+        showToast(articleId ? 'Article updated!' : 'Article published!');
+        if (!articleId) setTimeout(() => { location.href = '/articles'; }, 800);
+    } catch(e) { showToast(e.message, 'error'); }
+}
+</script>
+{% endblock %}

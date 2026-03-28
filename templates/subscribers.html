@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Subscribers{% endblock %}
+{% block page_title %}Subscribers{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-body" style="padding:0.85rem 1.25rem;">
+        <div class="filters">
+            <div class="search-bar" style="flex:1;min-width:180px;">
+                <i class="ri-search-line"></i>
+                <input class="form-control" placeholder="Search by email..." id="sub-search" oninput="filter()">
+            </div>
+            <span style="color:var(--outline);font-size:.82rem;" id="sub-count">—</span>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div style="overflow-x:auto;">
+        <table class="data-table">
+            <thead><tr>
+                <th style="width:30%">Email</th>
+                <th style="width:12%">Status</th>
+                <th style="width:15%">Source</th>
+                <th style="width:15%">IP</th>
+                <th style="width:16%">Subscribed</th>
+                <th style="width:60px">Action</th>
+            </tr></thead>
+            <tbody id="sub-body"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let subs = [];
+async function load() {
+    try {
+        subs = await apiCall('/api/v1/admin/subscribers');
+        document.getElementById('sub-count').textContent = subs.length + ' subscriber' + (subs.length !== 1 ? 's' : '');
+        render(subs);
+    } catch(e) { showToast(e.message,'error'); }
+}
+function render(list) {
+    const b = document.getElementById('sub-body');
+    if (!list.length) { b.innerHTML = '<tr><td colspan="6" class="empty-state">No subscribers</td></tr>'; return; }
+    b.innerHTML = list.map(s => `<tr>
+        <td>${esc(s.email)}</td>
+        <td><span class="badge badge-${s.status === 'active' ? 'success' : 'warning'}">${esc(s.status || 'active')}</span></td>
+        <td style="color:var(--outline)">${esc(s.source) || '—'}</td>
+        <td style="font-family:monospace;font-size:.76rem;color:var(--outline)">${esc(s.ip) || '—'}</td>
+        <td>${formatDate(s.created_at)}</td>
+        <td><button class="action-btn delete" onclick="del('${s._id}')"><i class="ri-delete-bin-line"></i></button></td>
+    </tr>`).join('');
+}
+function filter() { const q=document.getElementById('sub-search').value.toLowerCase(); render(subs.filter(s=>s.email.toLowerCase().includes(q))); }
+async function del(id) { if(!confirm('Remove?'))return; try{await apiCall('/api/v1/admin/subscribers/'+id,'DELETE');showToast('Removed');load();}catch(e){showToast(e.message,'error');} }
+load();
+</script>
+{% endblock %}

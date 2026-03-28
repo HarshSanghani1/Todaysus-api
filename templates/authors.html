@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Authors{% endblock %}
+{% block page_title %}Authors{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-primary" onclick="openModal()"><i class="ri-add-line"></i> New Author</button>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="overflow-x:auto;">
+        <table class="data-table">
+            <thead><tr>
+                <th style="width:22%">Name</th>
+                <th style="width:16%">Slug</th>
+                <th style="width:14%">Role</th>
+                <th style="width:20%">Email</th>
+                <th style="width:10%">Status</th>
+                <th style="width:80px">Actions</th>
+            </tr></thead>
+            <tbody id="author-body"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal-overlay" id="author-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="author-title">New Author</h3>
+            <button class="modal-close" onclick="closeM()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="author-slug">
+            <div class="form-group"><label>Name *</label><input class="form-control" id="author-name" placeholder="Full name"></div>
+            <div class="form-row">
+                <div class="form-group"><label>Role</label><select class="form-control" id="author-role"><option value="contributor">Contributor</option><option value="editor">Editor</option><option value="admin">Admin</option><option value="editorial-desk">Editorial Desk</option></select></div>
+                <div class="form-group"><label>Email</label><input type="email" class="form-control" id="author-email" placeholder="email@example.com"></div>
+            </div>
+            <div class="form-group"><label>Bio</label><textarea class="form-control" id="author-bio" rows="3" placeholder="Biography..."></textarea></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeM()">Cancel</button>
+            <button class="btn btn-primary" onclick="save()"><i class="ri-save-line"></i> Save</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let authors = [];
+async function load() {
+    try {
+        authors = await apiCall('/api/v1/admin/authors');
+        const b = document.getElementById('author-body');
+        if (!authors.length) { b.innerHTML = '<tr><td colspan="6" class="empty-state">No authors</td></tr>'; return; }
+        b.innerHTML = authors.map((a,i) => `<tr>
+            <td>${esc(a.name || a.display_name)}</td>
+            <td style="font-family:monospace;font-size:.76rem;color:var(--outline)">${esc(a.slug)}</td>
+            <td><span class="badge badge-info">${esc(a.role || 'contributor')}</span></td>
+            <td style="color:var(--outline)">${esc(a.email) || '—'}</td>
+            <td><span class="badge badge-${a.is_active !== false ? 'success' : 'danger'}">${a.is_active !== false ? 'Active' : 'Inactive'}</span></td>
+            <td><div class="action-btns">
+                <button class="action-btn" onclick="edit(${i})"><i class="ri-pencil-line"></i></button>
+                <button class="action-btn delete" onclick="del('${esc(a.slug)}')"><i class="ri-delete-bin-line"></i></button>
+            </div></td>
+        </tr>`).join('');
+    } catch(e) { showToast(e.message,'error'); }
+}
+function openModal() { document.getElementById('author-title').textContent='New Author'; document.getElementById('author-slug').value=''; document.getElementById('author-name').value=''; document.getElementById('author-role').value='contributor'; document.getElementById('author-email').value=''; document.getElementById('author-bio').value=''; document.getElementById('author-modal').classList.add('active'); }
+function edit(i) { const a=authors[i]; if(!a)return; document.getElementById('author-title').textContent='Edit Author'; document.getElementById('author-slug').value=a.slug; document.getElementById('author-name').value=a.name||''; document.getElementById('author-role').value=a.role||'contributor'; document.getElementById('author-email').value=a.email||''; document.getElementById('author-bio').value=a.bio||''; document.getElementById('author-modal').classList.add('active'); }
+async function save() {
+    const slug=document.getElementById('author-slug').value;
+    const body={name:document.getElementById('author-name').value, role:document.getElementById('author-role').value, email:document.getElementById('author-email').value, bio:document.getElementById('author-bio').value};
+    try { if(slug){await apiCall('/api/v1/admin/authors/'+slug,'PUT',body);showToast('Updated');} else{await apiCall('/api/v1/admin/authors','POST',body);showToast('Created');} closeM();load(); } catch(e){showToast(e.message,'error');}
+}
+async function del(slug) { if(!confirm('Delete?'))return; try{await apiCall('/api/v1/admin/authors/'+slug,'DELETE');showToast('Deleted');load();}catch(e){showToast(e.message,'error');} }
+function closeM() { document.getElementById('author-modal').classList.remove('active'); }
+load();
+</script>
+{% endblock %}

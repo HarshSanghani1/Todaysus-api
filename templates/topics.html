@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Topics{% endblock %}
+{% block page_title %}Topics{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-primary" onclick="openModal()"><i class="ri-add-line"></i> New Topic</button>
+{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-body" style="padding:0.85rem 1.25rem;">
+        <div class="search-bar">
+            <i class="ri-search-line"></i>
+            <input class="form-control" placeholder="Search topics..." id="topic-search" oninput="filter()">
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div style="overflow-x:auto;">
+        <table class="data-table">
+            <thead><tr>
+                <th style="width:25%">Name</th>
+                <th style="width:22%">Slug</th>
+                <th style="width:12%">Articles</th>
+                <th style="width:12%">Status</th>
+                <th style="width:16%">Created</th>
+                <th style="width:80px">Actions</th>
+            </tr></thead>
+            <tbody id="topic-body"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal-overlay" id="topic-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="topic-title">New Topic</h3>
+            <button class="modal-close" onclick="closeM()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="topic-id">
+            <div class="form-group"><label>Name *</label><input class="form-control" id="topic-name" placeholder="e.g. Artificial Intelligence"></div>
+            <div class="form-group"><label>Description</label><textarea class="form-control" id="topic-desc" rows="2"></textarea></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeM()">Cancel</button>
+            <button class="btn btn-primary" onclick="save()"><i class="ri-save-line"></i> Save</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let topics = [];
+async function load() {
+    try {
+        topics = await apiCall('/api/v1/admin/topics');
+        render(topics);
+    } catch(e) { showToast(e.message,'error'); }
+}
+function render(list) {
+    const b = document.getElementById('topic-body');
+    if (!list.length) { b.innerHTML = '<tr><td colspan="6" class="empty-state">No topics</td></tr>'; return; }
+    b.innerHTML = list.map((t,i) => `<tr>
+        <td>${esc(t.name)}</td>
+        <td style="font-family:monospace;font-size:.76rem;color:var(--outline)">${esc(t.slug)}</td>
+        <td>${t.article_count || 0}</td>
+        <td><span class="badge badge-${t.is_active !== false ? 'success' : 'danger'}">${t.is_active !== false ? 'Active' : 'Inactive'}</span></td>
+        <td>${formatDate(t.created_at)}</td>
+        <td><div class="action-btns">
+            <button class="action-btn" onclick="edit(${i})"><i class="ri-pencil-line"></i></button>
+            <button class="action-btn delete" onclick="del('${t._id}')"><i class="ri-delete-bin-line"></i></button>
+        </div></td>
+    </tr>`).join('');
+}
+function filter() { const q=document.getElementById('topic-search').value.toLowerCase(); render(topics.filter(t=>t.name.toLowerCase().includes(q))); }
+function openModal() { document.getElementById('topic-title').textContent='New Topic'; document.getElementById('topic-id').value=''; document.getElementById('topic-name').value=''; document.getElementById('topic-desc').value=''; document.getElementById('topic-modal').classList.add('active'); }
+function edit(i) { const t=topics[i]; if(!t)return; document.getElementById('topic-title').textContent='Edit Topic'; document.getElementById('topic-id').value=t._id; document.getElementById('topic-name').value=t.name||''; document.getElementById('topic-desc').value=t.description||''; document.getElementById('topic-modal').classList.add('active'); }
+async function save() {
+    const id=document.getElementById('topic-id').value;
+    const body={name:document.getElementById('topic-name').value, description:document.getElementById('topic-desc').value};
+    try { if(id){await apiCall('/api/v1/admin/topics/'+id,'PUT',body);showToast('Updated');} else{await apiCall('/api/v1/admin/topics','POST',body);showToast('Created');} closeM();load(); } catch(e){showToast(e.message,'error');}
+}
+async function del(id) { if(!confirm('Delete?'))return; try{await apiCall('/api/v1/admin/topics/'+id,'DELETE');showToast('Deleted');load();}catch(e){showToast(e.message,'error');} }
+function closeM() { document.getElementById('topic-modal').classList.remove('active'); }
+load();
+</script>
+{% endblock %}

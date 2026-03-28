@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Today's US Admin</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <!-- Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    
+    <style>
+        :root {
+            --surface-1: #18181b; 
+            --surface-2: #27272a; 
+            --on-surface: #ffffff;
+            --on-surface-variant: #a1a1aa;
+            --primary: #8b5cf6; 
+            --primary-hover: #7c3aed;
+            --ghost: rgba(255,255,255,0.06);
+            --error: #ef4444;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #09090b;
+            color: var(--on-surface);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .login-card {
+            background-color: var(--surface-1);
+            border: 1px solid var(--ghost);
+            border-radius: var(--radius-md);
+            width: 100%;
+            max-width: 400px;
+            padding: 2.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: float-up 0.5s ease-out;
+        }
+
+        @keyframes float-up {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .brand-logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 2rem;
+            gap: 1rem;
+        }
+        
+        .brand-icon {
+            background: linear-gradient(135deg, var(--primary), #a78bfa);
+            color: #fff;
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            font-weight: 800;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 1.2rem;
+            box-shadow: 0 8px 16px rgba(139, 92, 246, 0.2);
+        }
+
+        .brand-text h1 {
+            font-family: 'DM Sans', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            color: var(--on-surface);
+        }
+        
+        .brand-text span {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--on-surface-variant);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-top: -2px;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--on-surface-variant);
+        }
+
+        .form-control {
+            width: 100%;
+            background: var(--surface-2);
+            border: 1px solid var(--ghost);
+            color: var(--on-surface);
+            padding: 0.75rem 1rem;
+            border-radius: var(--radius-sm);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .form-control:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+        }
+
+        .btn-primary {
+            width: 100%;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.85rem;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--error);
+            padding: 0.75rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            display: none;
+        }
+
+        .error-message.show {
+            display: flex;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-card">
+        <div class="brand-logo">
+            <div class="brand-icon">TU</div>
+            <div class="brand-text">
+                <h1>Today's US</h1>
+                <span>System Access</span>
+            </div>
+        </div>
+
+        <div id="error-box" class="error-message">
+            <i class="ri-error-warning-line"></i>
+            <span id="error-text">Authentication failed.</span>
+        </div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" class="form-control" autocomplete="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" class="form-control" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn-primary" id="login-btn">
+                <span>Sign In Securely</span>
+                <i class="ri-arrow-right-line"></i>
+            </button>
+        </form>
+    </div>
+
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('login-btn');
+            const errorBox = document.getElementById('error-box');
+            
+            btn.innerHTML = '<i class="ri-loader-4-line" style="animation: spin 1s linear infinite;"></i> Authenticating...';
+            btn.style.opacity = '0.7';
+            btn.disabled = true;
+            errorBox.classList.remove('show');
+
+            const payload = {
+                username: document.getElementById('username').value.trim(),
+                password: document.getElementById('password').value
+            };
+
+            try {
+                const res = await fetch('/api/v1/admin/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await res.json();
+                
+                if (res.ok) {
+                    btn.innerHTML = '<i class="ri-check-line"></i> Access Granted';
+                    btn.style.background = '#10b981';
+                    setTimeout(() => { window.location.href = '/'; }, 600);
+                } else {
+                    throw new Error(data.error || 'Authentication failed');
+                }
+            } catch (err) {
+                document.getElementById('error-text').innerText = err.message;
+                errorBox.classList.add('show');
+                btn.innerHTML = '<span>Sign In Securely</span><i class="ri-arrow-right-line"></i>';
+                btn.style.opacity = '1';
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

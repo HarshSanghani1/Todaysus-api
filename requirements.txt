@@ -1,0 +1,7 @@
+flask
+flask-pymongo
+python-slugify
+python-dotenv
+python-dateutil
+requests
+apscheduler
