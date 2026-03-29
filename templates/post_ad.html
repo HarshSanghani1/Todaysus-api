@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Campaign' if ad_id else 'New Campaign' }}{% endblock %}
+{% block page_title %}{{ 'Edit Campaign' if ad_id else 'New Campaign' }}{% endblock %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:0.75rem;">
+    <a href="/ads" class="btn btn-ghost"><i class="ri-arrow-left-s-line"></i> Back</a>
+    <button class="btn btn-primary" onclick="submitAd()"><i class="ri-save-3-fill"></i> Save Campaign</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fade-in" style="display:grid;grid-template-columns:1fr 340px;gap:2rem;align-items:start;">
+    
+    <!-- Main Detail Editor -->
+    <div style="display:flex;flex-direction:column;gap:1.5rem;">
+        
+        <div class="card">
+            <div class="card-header"><h3><i class="ri-advertisement-line"></i> Creative Details</h3></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:1.25rem;">
+                
+                <div class="form-group" style="margin:0;">
+                    <label>Internal Campaign Title *</label>
+                    <input type="text" id="title" class="form-control" placeholder="e.g. Summer Sale 2026 - Main Banner">
+                </div>
+
+                <div class="form-group" style="margin:0;">
+                    <label>Destination URL *</label>
+                    <input type="text" id="redirect_url" class="form-control" placeholder="https://example.com/promo">
+                    <small style="color:var(--outline);font-size:0.65rem;margin-top:4px;display:block;">Where the user goes when they click the ad.</small>
+                </div>
+
+                <div class="form-group" style="margin:0;">
+                    <label>Alt Text / Description</label>
+                    <input type="text" id="alt_text" class="form-control" placeholder="Descriptive text for accessibility">
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3><i class="ri-image-2-line"></i> Ad Creative Image</h3></div>
+            <div class="card-body">
+                <div id="image-preview" style="width:100%;min-height:220px;background:var(--surface-1);border-radius:var(--radius-sm);margin-bottom:1.5rem;display:flex;align-items:center;justify-content:center;overflow:hidden;border:2px dashed var(--ghost);">
+                    <i class="ri-image-add-line" style="font-size:3rem;color:var(--outline-variant);"></i>
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>Image Source URL *</label>
+                    <input type="text" id="image_url" class="form-control" placeholder="Paste full image URL" oninput="updatePreview()">
+                </div>
+            </div>
+        </div>
+        
+    </div>
+
+    <!-- Sidebar Configuration -->
+    <div style="display:flex;flex-direction:column;gap:1.5rem;position:sticky;top:5rem;">
+        
+        <div class="card" style="border-top:3px solid var(--secondary-container);">
+            <div class="card-header"><h3><i class="ri-settings-4-line"></i> Delivery & Scale</h3></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:1rem;">
+                
+                <div class="form-group" style="margin:0;">
+                    <label>Status</label>
+                    <select id="status" class="form-control">
+                        <option value="active">Active (Running)</option>
+                        <option value="paused" selected>Paused</option>
+                        <option value="expired">Expired</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin:0;">
+                    <label>Placement Zone</label>
+                    <select id="placement" class="form-control">
+                        <option value="popup">Takeover / Popup</option>
+                        <option value="sidebar">Sidebar Ad</option>
+                        <option value="header">Header Banner</option>
+                        <option value="inline">In-Article Content</option>
+                        <option value="footer">Footer Banner</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin:0;">
+                    <label>Target Pages</label>
+                    <div style="background:var(--surface-1);border:1px solid var(--ghost);border-radius:var(--radius-xs);padding:0.75rem;display:flex;flex-direction:column;gap:0.5rem;max-height:150px;overflow-y:auto;">
+                        <label style="display:flex;align-items:center;gap:0.5rem;text-transform:none;letter-spacing:normal;font-weight:400;"><input type="checkbox" name="ad_pages" value="all" checked> All Pages</label>
+                        <label style="display:flex;align-items:center;gap:0.5rem;text-transform:none;letter-spacing:normal;font-weight:400;"><input type="checkbox" name="ad_pages" value="home"> Home Page</label>
+                        <label style="display:flex;align-items:center;gap:0.5rem;text-transform:none;letter-spacing:normal;font-weight:400;"><input type="checkbox" name="ad_pages" value="article"> Article Detail Pages</label>
+                        <label style="display:flex;align-items:center;gap:0.5rem;text-transform:none;letter-spacing:normal;font-weight:400;"><input type="checkbox" name="ad_pages" value="category"> Category Listing</label>
+                        <label style="display:flex;align-items:center;gap:0.5rem;text-transform:none;letter-spacing:normal;font-weight:400;"><input type="checkbox" name="ad_pages" value="horoscope"> Horoscopes</label>
+                        <label style="display:flex;align-items:center;gap:0.5rem;text-transform:none;letter-spacing:normal;font-weight:400;"><input type="checkbox" name="ad_pages" value="weather"> Weather</label>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin:0;">
+                    <label>Visual Size</label>
+                    <select id="size" class="form-control">
+                        <option value="rectangle">Medium Rectangle (300×250)</option>
+                        <option value="banner">Leaderboard Banner (728×90)</option>
+                        <option value="square">Standard Square (250×250)</option>
+                        <option value="skyscraper">Wide Skyscraper (160×600)</option>
+                        <option value="fluid">Fluid (Responsive Width)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" style="margin:0;">
+                    <label>Priority / Weighting</label>
+                    <input type="number" id="priority" class="form-control" value="10" min="1" max="100">
+                    <small style="color:var(--outline);font-size:0.65rem;margin-top:4px;display:block;">Higher number = ad appears more frequently.</small>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3><i class="ri-calendar-event-line"></i> Lifecycle</h3></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:1rem;">
+                
+                <div class="form-group" style="margin:0;">
+                    <label>Start Serving On</label>
+                    <input type="datetime-local" id="start_date" class="form-control">
+                </div>
+
+                <div class="form-group" style="margin:0;">
+                    <label>Stop Serving On (Optional)</label>
+                    <input type="datetime-local" id="end_date" class="form-control">
+                    <small style="color:var(--outline);font-size:0.65rem;margin-top:4px;display:block;">Leave empty to run indefinitely.</small>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<input type="hidden" id="ad-id" value="{{ ad_id or '' }}">
+{% endblock %}
+
+{% block scripts %}
+<script>
+const adId = document.getElementById('ad-id').value;
+
+function updatePreview() {
+    const url = document.getElementById('image_url').value;
+    const box = document.getElementById('image-preview');
+    if(url) {
+        box.innerHTML = `<img src="${url}" style="max-width:100%;max-height:100%;object-fit:contain;">`;
+    } else {
+        box.innerHTML = `<i class="ri-image-add-line" style="font-size:3rem;color:var(--outline-variant);"></i>`;
+    }
+}
+
+// Convert UTC dates from API to local datetime-local format
+function toLocalDatetimeString(isoString) {
+    if(!isoString) return '';
+    const d = new Date(isoString);
+    if(isNaN(d.valueOf())) return '';
+    return new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+}
+
+// Convert local datetime-local string to UTC for API
+function toUtcIsoString(localString) {
+    if(!localString) return null;
+    return new Date(localString).toISOString();
+}
+
+(async () => {
+    // Set default start date to now
+    document.getElementById('start_date').value = toLocalDatetimeString(new Date().toISOString());
+
+    if(adId) {
+        try {
+            const ad = await apiCall('/api/v1/admin/ads/' + adId);
+            document.getElementById('title').value = ad.title || '';
+            document.getElementById('redirect_url').value = ad.redirect_url || '';
+            document.getElementById('alt_text').value = ad.alt_text || '';
+            document.getElementById('image_url').value = ad.image_url || '';
+            
+            document.getElementById('status').value = ad.status || 'paused';
+            document.getElementById('placement').value = ad.placement || 'sidebar';
+            document.getElementById('size').value = ad.size || 'rectangle';
+            document.getElementById('priority').value = ad.priority || 10;
+            
+            if(ad.start_date) document.getElementById('start_date').value = toLocalDatetimeString(ad.start_date);
+            if(ad.end_date) document.getElementById('end_date').value = toLocalDatetimeString(ad.end_date);
+            
+            if(ad.pages && Array.isArray(ad.pages)) {
+                // Check correct checkboxes
+                document.querySelectorAll('input[name="ad_pages"]').forEach(cb => {
+                    cb.checked = ad.pages.includes(cb.value);
+                });
+            }
+
+            updatePreview();
+        } catch(e) { showToast("Failed to load ad: " + e.message, 'error'); }
+    }
+})();
+
+async function submitAd() {
+    const title = document.getElementById('title').value.trim();
+    const image_url = document.getElementById('image_url').value.trim();
+    const redirect_url = document.getElementById('redirect_url').value.trim();
+
+    if(!title || !image_url || !redirect_url) {
+        showToast("Title, Image URL, and Destination URL are required", "error");
+        return;
+    }
+
+    // Get checked pages
+    const selectedPages = Array.from(document.querySelectorAll('input[name="ad_pages"]:checked')).map(cb => cb.value);
+    if (selectedPages.length === 0) {
+        showToast("Please target at least one page type", "error");
+        return;
+    }
+
+    const payload = {
+        title,
+        image_url,
+        redirect_url,
+        alt_text: document.getElementById('alt_text').value.trim(),
+        placement: document.getElementById('placement').value,
+        size: document.getElementById('size').value,
+        priority: parseInt(document.getElementById('priority').value) || 10,
+        status: document.getElementById('status').value,
+        start_date: toUtcIsoString(document.getElementById('start_date').value),
+        end_date: toUtcIsoString(document.getElementById('end_date').value),
+        pages: selectedPages
+    };
+
+    try {
+        const method = adId ? 'PUT' : 'POST';
+        const url = adId ? ('/api/v1/admin/ads/' + adId) : '/api/v1/admin/ads';
+        await apiCall(url, method, payload);
+        
+        showToast(adId ? "Campaign successfully updated!" : "Ad Campaign created!");
+        setTimeout(() => window.location.href = '/ads', 1000);
+    } catch(e) {
+        showToast("Error: " + e.message, "error");
+    }
+}
+</script>
+{% endblock %}

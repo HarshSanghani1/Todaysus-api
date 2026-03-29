@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Ads Dashboard{% endblock %}
+{% block page_title %}Monetization Metrics{% endblock %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:0.75rem;">
+    <a href="/ads" class="btn btn-ghost"><i class="ri-list-check"></i> Manage Campaigns</a>
+    <a href="/ads/new" class="btn btn-primary"><i class="ri-add-line"></i> New Campaign</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+
+    <!-- KPI Metrics -->
+    <div class="stats-grid">
+        <div class="stat-card violet">
+            <div class="stat-icon"><i class="ri-eye-2-line"></i></div>
+            <div class="stat-value" id="stat-views">...</div>
+            <div class="stat-label">Total Ad Impressions</div>
+        </div>
+        <div class="stat-card emerald">
+            <div class="stat-icon"><i class="ri-cursor-line"></i></div>
+            <div class="stat-value" id="stat-clicks">...</div>
+            <div class="stat-label">Total Ad Clicks</div>
+        </div>
+        <div class="stat-card amber">
+            <div class="stat-icon"><i class="ri-pulse-line"></i></div>
+            <div class="stat-value" id="stat-ctr">...</div>
+            <div class="stat-label">Global Click-Through Rate</div>
+        </div>
+        <div class="stat-card blue">
+            <div class="stat-icon"><i class="ri-broadcast-line"></i></div>
+            <div class="stat-value" id="stat-active">...</div>
+            <div class="stat-label">Active Campaigns</div>
+        </div>
+    </div>
+
+    <!-- Active High Level Campaigns Table -->
+    <div class="card" style="margin-top:2rem;">
+        <div class="card-header">
+            <h3><i class="ri-fire-line"></i> Top Performing Campaigns</h3>
+        </div>
+        <div class="card-body" style="padding:0; overflow-x:auto;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:250px;">Campaign Name</th>
+                        <th>Target Pages</th>
+                        <th>Status</th>
+                        <th>Views</th>
+                        <th>Clicks</th>
+                        <th>Individual CTR</th>
+                    </tr>
+                </thead>
+                <tbody id="top-ads-body">
+                    <tr><td colspan="6" class="empty-state">Loading metrics...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadDashboard() {
+    try {
+        const stats = await apiCall('/api/v1/admin/ads/stats');
+        
+        // Update KPIs
+        document.getElementById('stat-views').textContent = stats.total_views.toLocaleString();
+        document.getElementById('stat-clicks').textContent = stats.total_clicks.toLocaleString();
+        document.getElementById('stat-ctr').textContent = stats.ctr + '%';
+        document.getElementById('stat-active').textContent = stats.active;
+
+        // Load Ads to show top performers
+        const ads = await apiCall('/api/v1/admin/ads');
+        
+        // Sort by highest clicks, or views if 0 clicks
+        ads.sort((a, b) => {
+            if (b.clicks !== a.clicks) return (b.clicks || 0) - (a.clicks || 0);
+            return (b.views || 0) - (a.views || 0);
+        });
+
+        // Top 10 only
+        const topAds = ads.slice(0, 10);
+        const tbody = document.getElementById('top-ads-body');
+        
+        if(topAds.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No campaign data available.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        topAds.forEach(ad => {
+            const tr = document.createElement('tr');
+            
+            let ctr = 0;
+            if (ad.views > 0) ctr = ((ad.clicks || 0) / ad.views * 100).toFixed(2);
+            
+            let statusBadge = "badge-violet";
+            if(ad.status === 'active') statusBadge = "badge-success";
+            if(ad.status === 'paused') statusBadge = "badge-warning";
+            if(ad.status === 'expired') statusBadge = "badge-ghost";
+
+            let pagesRender = 'All pages';
+            if(ad.pages && Array.isArray(ad.pages)) {
+                pagesRender = ad.pages.join(', ');
+            }
+
+            tr.innerHTML = `
+                <td><a href="/ads/${ad._id}/edit" style="color:var(--on-surface);text-decoration:none;font-weight:600;">${esc(ad.title)}</a></td>
+                <td style="text-transform:capitalize;">${esc(pagesRender)}</td>
+                <td><span class="badge ${statusBadge}">${esc(ad.status)}</span></td>
+                <td>${(ad.views || 0).toLocaleString()}</td>
+                <td>${(ad.clicks || 0).toLocaleString()}</td>
+                <td style="color: ${ctr > 1 ? 'var(--secondary)' : 'var(--outline)'}; font-weight: 600;">${ctr}%</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+    } catch (e) {
+        showToast("Error loading advanced metrics", "error");
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadDashboard);
+</script>
+{% endblock %}

@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Horoscopes{% endblock %}
+{% block page_title %}Zodiac & Horoscope Data{% endblock %}
+
+{% block topbar_actions %}
+<div class="search-bar" style="width: 280px; margin-right: 1.5rem;">
+    <i class="ri-search-line"></i>
+    <input type="text" id="searchInput" class="form-control" placeholder="Search by sign, date..." oninput="filterHoroscopes()" style="border-radius: var(--radius-sm); border-bottom: none; background: rgba(255,255,255,0.03);">
+</div>
+<button class="btn btn-danger" onclick="openPurgeModal()"><i class="ri-delete-bin-5-line"></i> Purge Past Data</button>
+{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+
+    <!-- KPI Metrics / High Level -->
+    <div class="stats-grid" id="horoscope-stats-grid" style="margin-bottom: 2rem;">
+        <div class="stat-card violet">
+            <div class="stat-icon"><i class="ri-database-2-line"></i></div>
+            <div class="stat-value" id="stat-total">...</div>
+            <div class="stat-label">Total Kept Records</div>
+        </div>
+        <div class="stat-card blue">
+            <div class="stat-icon"><i class="ri-history-line"></i></div>
+            <div class="stat-value" id="stat-last">...</div>
+            <div class="stat-label">Last Generated</div>
+        </div>
+    </div>
+
+    <!-- Active Table -->
+    <div class="card">
+        <div class="card-header">
+            <h3><i class="ri-list-check"></i> Latest Retrieved Horoscopes</h3>
+            <span style="font-size:0.75rem;color:var(--outline);">(Showing Top 100)</span>
+        </div>
+        <div class="card-body" style="padding:0; overflow-x:auto;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:120px;">Target Date</th>
+                        <th style="width:100px;">Zodiac Sign</th>
+                        <th style="width:90px;">Period</th>
+                        <th>Horoscope Summary</th>
+                        <th style="width:80px;text-align:right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="horoscopes-table-body">
+                    <tr><td colspan="5" class="empty-state">Loading data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<!-- Purge Modal -->
+<div class="modal-overlay" id="purgeModal">
+    <div class="modal" style="max-width: 480px;">
+        <div class="modal-header">
+            <h3 style="color:var(--error);"><i class="ri-error-warning-line"></i> Purge Old Horoscopes</h3>
+            <button class="modal-close" onclick="closePurgeModal()"><i class="ri-close-line"></i></button>
+        </div>
+        <div class="modal-body" style="display:flex;flex-direction:column;gap:1.5rem;">
+            <p style="font-size:0.9rem; line-height:1.6; color:var(--on-surface-variant);">
+                Select a cutoff date. All horoscope entries strictly <strong>older</strong> than this date will be permanently deleted from the database.
+            </p>
+            <div class="form-group" style="margin:0;">
+                <label>Purge Cutoff Date *</label>
+                <input type="date" id="cutoffDate" class="form-control" style="background:var(--base);">
+            </div>
+            
+            <div style="background:rgba(255, 180, 171, 0.08); padding:1rem; border-radius:var(--radius-sm); border:1px solid rgba(255, 180, 171, 0.2);">
+                <p style="font-size:0.8rem; color:var(--error); margin:0;"><strong>Warning:</strong> This action cannot be undone. Always ensure active current periods are excluded.</p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closePurgeModal()">Cancel</button>
+            <button class="btn btn-danger" onclick="executePurge()" id="purgeBtn"><i class="ri-delete-bin-2-fill"></i> Execute Purge</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allHoro = [];
+
+async function loadHoroscopes() {
+    try {
+        const horos = await apiCall('/api/v1/admin/horoscopes');
+        allHoro = horos;
+        
+        document.getElementById('stat-total').textContent = (horos.length >= 100 ? '100+' : horos.length);
+        if(horos.length > 0) {
+            document.getElementById('stat-last').textContent = horos[0].date;
+        } else {
+            document.getElementById('stat-last').textContent = 'N/A';
+        }
+
+        renderHoroscopes(horos);
+    } catch (e) {
+        showToast("Error loading horoscopes", "error");
+    }
+}
+
+function renderHoroscopes(items) {
+    const tbody = document.getElementById('horoscopes-table-body');
+    if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No horoscopes found in database.</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = '';
+    items.forEach(h => {
+        const tr = document.createElement('tr');
+        
+        let periodBadge = "badge-violet";
+        if(h.period === 'daily') periodBadge = "badge-success";
+        if(h.period === 'weekly') periodBadge = "badge-info";
+        if(h.period === 'monthly') periodBadge = "badge-warning";
+
+        tr.innerHTML = `
+            <td><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--secondary);">${h.date}</span></td>
+            <td><span style="text-transform:capitalize;font-weight:600;">${esc(h.sign)}</span></td>
+            <td><span class="badge ${periodBadge}">${esc(h.period)}</span></td>
+            <td>
+                <div class="truncate" style="max-width: 380px; font-size: 0.82rem; color: var(--on-surface-variant);" title="${esc(h.horoscope)}">
+                    ${esc(h.horoscope)}
+                </div>
+            </td>
+            <td style="text-align:right;">
+                <div class="action-btns" style="justify-content:flex-end;">
+                    <a href="/horoscopes/${h._id}/edit" class="action-btn" title="Edit Data"><i class="ri-pencil-line"></i></a>
+                    <button class="action-btn delete" title="Delete Entry" onclick="deleteHoroscope('${h._id}')"><i class="ri-delete-bin-line"></i></button>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function filterHoroscopes() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    const filtered = allHoro.filter(h => 
+        (h.sign || '').toLowerCase().includes(q) || 
+        (h.date || '').toLowerCase().includes(q) ||
+        (h.period || '').toLowerCase().includes(q)
+    );
+    renderHoroscopes(filtered);
+}
+
+async function deleteHoroscope(id) {
+    if (!confirm('Delete this single horoscope entry?')) return;
+    try {
+        await apiCall('/api/v1/admin/horoscopes/' + id, 'DELETE');
+        showToast("Horoscope deleted");
+        loadHoroscopes();
+    } catch(e) {
+        showToast("Failed to delete: " + e.message, "error");
+    }
+}
+
+// Modal Logic
+function openPurgeModal() {
+    document.getElementById('purgeModal').classList.add('active');
+    
+    // Default to older than today
+    const today = new Date();
+    document.getElementById('cutoffDate').value = today.toISOString().split('T')[0];
+}
+
+function closePurgeModal() {
+    document.getElementById('purgeModal').classList.remove('active');
+}
+
+async function executePurge() {
+    const dateV = document.getElementById('cutoffDate').value;
+    if(!dateV) { showToast("Select a valid cutoff date.", "error"); return; }
+    
+    const btn = document.getElementById('purgeBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ri-loader-4-line" style="animation:spin 1s linear infinite;"></i> Purging...';
+    
+    try {
+        const payload = { cutoff_date: dateV };
+        const res = await apiCall('/api/v1/admin/horoscopes/bulk-delete', 'POST', payload);
+        
+        showToast(res.message, "success");
+        closePurgeModal();
+        loadHoroscopes();
+    } catch(e) {
+        showToast("Purge failed: " + e.message, "error");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ri-delete-bin-2-fill"></i> Execute Purge';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadHoroscopes);
+</script>
+{% endblock %}

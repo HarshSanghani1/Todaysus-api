@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Ads{% endblock %}
+{% block page_title %}Ad Campaigns{% endblock %}
+
+{% block topbar_actions %}
+<div class="search-bar" style="width: 280px;">
+    <i class="ri-search-line"></i>
+    <input type="text" id="searchInput" class="form-control" placeholder="Search ads by title or placement..." oninput="filterAds()" style="border-radius: var(--radius-sm); border-bottom: none; background: rgba(255,255,255,0.03);">
+</div>
+<a href="/ads/new" class="btn btn-primary"><i class="ri-add-line"></i> New Campaign</a>
+{% endblock %}
+
+{% block content %}
+<div class="card fade-in">
+    <div class="card-body" style="padding:0; overflow-x:auto;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width:250px;">Campaign Title</th>
+                    <th>Placement</th>
+                    <th>Format</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                    <th>Metrics</th>
+                    <th style="width:100px;text-align:right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="ads-table-body">
+                <tr><td colspan="7" class="empty-state">Loading campaigns...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allAds = [];
+
+async function loadAds() {
+    try {
+        const ads = await apiCall('/api/v1/admin/ads');
+        allAds = ads;
+        renderAds(ads);
+    } catch (e) {
+        showToast("Error loading campaigns", "error");
+    }
+}
+
+function renderAds(ads) {
+    const tbody = document.getElementById('ads-table-body');
+    if (!ads.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No ad campaigns found.</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = '';
+    ads.forEach(ad => {
+        const tr = document.createElement('tr');
+        
+        let statusBadge = "badge-violet";
+        if(ad.status === 'active') statusBadge = "badge-success";
+        if(ad.status === 'paused') statusBadge = "badge-warning";
+        if(ad.status === 'expired') statusBadge = "badge-ghost";
+
+        tr.innerHTML = `
+            <td>
+                <div style="display:flex;align-items:center;gap:0.75rem;">
+                    <div style="background:var(--surface-3);border-radius:var(--radius-xs);width:40px;height:40px;overflow:hidden;flex-shrink:0;">
+                        ${ad.image_url ? `<img src="${ad.image_url}" style="width:100%;height:100%;object-fit:cover;">` : `<i class="ri-image-2-line" style="line-height:40px;text-align:center;width:100%;opacity:0.3;"></i>`}
+                    </div>
+                    <div style="display:flex;flex-direction:column;">
+                        <span style="font-weight:600;color:var(--on-surface);">${esc(ad.title)}</span>
+                        <span style="font-size:0.7rem;color:var(--outline);">${ad.redirect_url ? 'Has Redirect URL' : 'No Link'}</span>
+                    </div>
+                </div>
+            </td>
+            <td><span class="badge" style="background:var(--surface-3);color:var(--on-surface-variant);"><i class="ri-layout-masonry-line" style="margin-right:4px;"></i>${esc(ad.placement)}</span></td>
+            <td><span style="font-size:0.8rem;text-transform:capitalize;">${esc(ad.size)}</span></td>
+            <td><span class="badge ${statusBadge}">${esc(ad.status)}</span></td>
+            <td>
+                <div style="display:flex;flex-direction:column;font-size:0.75rem;">
+                    <span style="color:var(--secondary);">${formatDate(ad.start_date)}</span>
+                    <span style="color:var(--outline);">${ad.end_date ? formatDate(ad.end_date) : 'Indefinite'}</span>
+                </div>
+            </td>
+            <td>
+                <div style="display:flex;gap:1rem;font-size:0.75rem;">
+                    <span title="Views"><i class="ri-eye-line" style="color:var(--info);"></i> ${ad.views || 0}</span>
+                    <span title="Clicks"><i class="ri-cursor-line" style="color:var(--tertiary);"></i> ${ad.clicks || 0}</span>
+                </div>
+            </td>
+            <td style="text-align:right;">
+                <div class="action-btns" style="justify-content:flex-end;">
+                    <a href="/ads/${ad._id}/edit" class="action-btn" title="Edit"><i class="ri-pencil-line"></i></a>
+                    <button class="action-btn delete" title="Delete" onclick="deleteAd('${ad._id}')"><i class="ri-delete-bin-line"></i></button>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function filterAds() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    const filtered = allAds.filter(a => 
+        (a.title || '').toLowerCase().includes(q) || 
+        (a.placement || '').toLowerCase().includes(q)
+    );
+    renderAds(filtered);
+}
+
+async function deleteAd(id) {
+    if (!confirm('Are you certain you want to delete this ad campaign?')) return;
+    try {
+        await apiCall('/api/v1/admin/ads/' + id, 'DELETE');
+        showToast("Campaign deleted");
+        loadAds();
+    } catch(e) {
+        showToast("Failed to delete campaign: " + e.message, "error");
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadAds);
+</script>
+{% endblock %}

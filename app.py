@@ -15,6 +15,8 @@ from routes.author_routes import author_bp
 from routes.subscriber_routes import subscriber_bp
 from routes.dashboard_routes import dashboard_bp
 from routes.auth_routes import auth_bp
+from routes.ad_routes import ad_bp
+from routes.horoscope_routes import horoscope_bp
 
 
 class CustomJSONProvider(DefaultJSONProvider):
@@ -110,6 +112,26 @@ def authors_page():
 def subscribers_page():
     return render_template("subscribers.html")
 
+@app.route("/ads")
+def ads_page():
+    return render_template("ads.html")
+
+@app.route("/ads/dashboard")
+def ads_dashboard_page():
+    return render_template("ads_dashboard.html")
+
+@app.route("/ads/new")
+def new_ad_page():
+    return render_template("post_ad.html")
+
+@app.route("/ads/<id>/edit")
+def edit_ad_page(id):
+    return render_template("post_ad.html", ad_id=id)
+
+@app.route("/horoscopes")
+def horoscopes_page():
+    return render_template("horoscopes.html")
+
 # --- API Blueprints ---
 app.register_blueprint(article_bp)
 app.register_blueprint(category_bp)
@@ -118,6 +140,8 @@ app.register_blueprint(author_bp)
 app.register_blueprint(subscriber_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(ad_bp)
+app.register_blueprint(horoscope_bp)
 
 
 if __name__ == "__main__":

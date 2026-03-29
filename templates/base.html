@@ -485,6 +485,17 @@
             <a href="/topics" class="nav-link {% if '/topics' in request.path %}active{% endif %}">
                 <i class="ri-hashtag"></i> Topics
             </a>
+            <a href="/horoscopes" class="nav-link {% if '/horoscopes' in request.path %}active{% endif %}">
+                <i class="ri-moon-clear-line"></i> Horoscopes
+            </a>
+
+            <div class="nav-section">Monetization</div>
+            <a href="/ads/dashboard" class="nav-link {% if request.path == '/ads/dashboard' %}active{% endif %}">
+                <i class="ri-bar-chart-box-line"></i> Ad Metrics
+            </a>
+            <a href="/ads" class="nav-link {% if request.path == '/ads' or request.path.startswith('/ads/') and request.path != '/ads/dashboard' %}active{% endif %}">
+                <i class="ri-advertisement-line"></i> Ad Campaigns
+            </a>
 
             <div class="nav-section">People</div>
             <a href="/authors" class="nav-link {% if '/authors' in request.path %}active{% endif %}">
