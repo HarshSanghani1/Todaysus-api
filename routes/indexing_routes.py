@@ -14,6 +14,18 @@ indexing_bp = Blueprint('indexing', __name__, url_prefix='/api/v1/admin/indexing
 # --- Helpers ---
 
 def get_google_auth_session(scopes):
+    # Try reading from environment variable first (Vercel deployment)
+    creds_json = os.environ.get('GOOGLE_CREDENTIALS')
+    if creds_json:
+        try:
+            creds_info = json.loads(creds_json)
+            credentials = service_account.Credentials.from_service_account_info(creds_info, scopes=scopes)
+            return AuthorizedSession(credentials)
+        except Exception as e:
+            print(f"Error parsing GOOGLE_CREDENTIALS env var: {str(e)}")
+            return None
+
+    # Fallback to local file
     key_path = os.path.join(os.getcwd(), 'service_account.json')
     if not os.path.exists(key_path):
         return None
@@ -94,7 +106,7 @@ def submit_urls():
     if 'google' in targets:
         session = get_google_auth_session(['https://www.googleapis.com/auth/indexing'])
         if not session:
-            results['google']['failed'].append("Missing service_account.json in root!")
+            results['google']['failed'].append("Missing GOOGLE_CREDENTIALS env var or service_account.json in root!")
         else:
             endpoint = 'https://indexing.googleapis.com/v3/urlNotifications:publish'
             for url in urls:
