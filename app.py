@@ -39,8 +39,8 @@ mongo.init_app(app)
 
 @app.before_request
 def check_auth():
-    # Allow static files and the login route
-    if request.endpoint in ("login", "static", "auth.login"):
+    # Allow static files, login route, and Bing verification key
+    if request.endpoint in ("login", "static", "auth.login", "bing_indexing_key"):
         return
     
     # Check if a public route (some API endpoints might be public, like article list)
@@ -132,6 +132,17 @@ def edit_ad_page(id):
 def horoscopes_page():
     return render_template("horoscopes.html")
 
+@app.route("/indexing")
+def indexing_page():
+    return render_template("indexing.html")
+
+@app.route("/<key>.txt")
+def bing_indexing_key(key):
+    api_key = os.environ.get("INDEXNOW_KEY") or os.environ.get("BING_API_KEY")
+    if api_key and key == api_key:
+        return key, 200, {"Content-Type": "text/plain; charset=utf-8"}
+    return "Not Found", 404
+
 # --- API Blueprints ---
 app.register_blueprint(article_bp)
 app.register_blueprint(category_bp)
@@ -141,7 +152,8 @@ app.register_blueprint(subscriber_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(ad_bp)
-app.register_blueprint(horoscope_bp)
+from routes.indexing_routes import indexing_bp
+app.register_blueprint(indexing_bp)
 
 
 if __name__ == "__main__":

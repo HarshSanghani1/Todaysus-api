@@ -3,5 +3,7 @@ flask-pymongo
 python-slugify
 python-dotenv
 python-dateutil
+google-auth
+google-api-python-client
 requests
 apscheduler

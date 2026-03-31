@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block title %}SEO & Indexing Tool{% endblock %}
+{% block page_title %}SEO & Indexing Tool{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom: 2rem;">
+    <div class="card-header">
+        <div class="tab-group" id="indexing-tabs">
+            <div class="tab active" onclick="switchTab('single')"><i class="ri-link"></i> Single URL</div>
+            <div class="tab" onclick="switchTab('bulk')"><i class="ri-links-line"></i> Bulk Submit</div>
+            <div class="tab" onclick="switchTab('sitemap')"><i class="ri-node-tree"></i> Sitemap Indexing</div>
+        </div>
+    </div>
+    
+    <div class="card-body">
+        <div id="tab-content">
+            <!-- Single URL -->
+            <div id="content-single" class="tab-pane">
+                <div class="form-group">
+                    <label>URL to Index</label>
+                    <div style="display: flex; gap: 1rem;">
+                        <input type="url" id="single-url" class="form-control" placeholder="https://todaysus.com/your-article-url">
+                        <button class="btn btn-ghost btn-sm" onclick="inspectURL()" title="Check Indexing Status via Search Console API" style="border:1px solid var(--ghost)">
+                            <i class="ri-search-eye-line"></i> Inspect Status
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bulk Submit -->
+            <div id="content-bulk" class="tab-pane" style="display:none;">
+                <div class="form-group">
+                    <label>URLs (One per line)</label>
+                    <textarea id="bulk-urls" class="form-control" placeholder="https://todaysus.com/url-1&#10;https://todaysus.com/url-2" style="height: 150px;"></textarea>
+                </div>
+            </div>
+
+            <!-- Sitemap -->
+            <div id="content-sitemap" class="tab-pane" style="display:none;">
+                <div class="form-group">
+                    <label>Sitemap URL</label>
+                    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                        <input type="url" id="sitemap-url" class="form-control" placeholder="https://todaysus.com/sitemap.xml" style="flex:1">
+                        <button class="btn btn-primary btn-sm" onclick="fetchSitemap()">1. Fetch URLs</button>
+                        <button class="btn btn-ghost btn-sm" onclick="submitSitemapToSC()" style="border: 1px solid var(--ghost);">
+                            <i class="ri-google-line"></i> 2. Submit to Search Console API
+                        </button>
+                    </div>
+                </div>
+                <div id="sitemap-preview" style="margin-top: 1rem; display:none;">
+                    <div style="font-size: 0.75rem; color: var(--outline); margin-bottom: 0.5rem;" id="sitemap-count">Found 0 URLs</div>
+                    <div id="sitemap-list" style="max-height: 200px; overflow-y: auto; background: var(--base); padding: 0.5rem; border-radius: var(--radius-sm); font-size: 0.8rem; border: 1px solid var(--ghost);">
+                        <!-- URLs listed here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--ghost);">
+            <div class="form-group">
+                <label>Target Search Engines</label>
+                <div style="display: flex; gap: 2rem; margin-top: 0.5rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-transform: none;">
+                        <input type="checkbox" id="target-google" checked> <i class="ri-google-fill" style="color:#4285F4"></i> Google Indexing API
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-transform: none;">
+                        <input type="checkbox" id="target-bing" checked> <i class="ri-edge-fill" style="color:#0078D7"></i> Bing IndexNow
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-group" id="google-action-group">
+                <label>Google Action Type</label>
+                <select id="google-action" class="form-control" style="max-width: 200px;">
+                    <option value="URL_UPDATED">Publish / Update</option>
+                    <option value="URL_DELETED">Remove URL</option>
+                </select>
+            </div>
+
+            <div style="font-size: 0.7rem; color: var(--outline); margin-top: 1rem; padding: 0.6rem 0.75rem; background: rgba(124,58,237,0.04); border-radius: var(--radius-xs); border: 1px solid var(--ghost);">
+                <i class="ri-information-line"></i>
+                <b>Bing IndexNow Rules:</b> To use IndexNow, Bing requires that the key file MUST be accessible at <code>https://todaysus.com/<span id="key-hint">YOUR_KEY</span>.txt</code> on the public internet. If you are running strictly on localhost and DO NOT upload this file to your live site, IndexNow will always fail with a 403/422 error.
+            </div>
+
+            <button class="btn btn-primary" id="submit-btn" onclick="submitIndexing()" style="margin-top: 1.25rem;">
+                <i class="ri-send-plane-fill"></i> Process Indexing
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card" id="history-card" style="margin-top: 2rem;">
+    <div class="card-header">
+        <h3><i class="ri-history-line"></i> Recent Submissions</h3>
+        <button class="btn btn-ghost btn-sm" onclick="loadHistory()">Refresh</button>
+    </div>
+    <div style="overflow-x:auto;">
+        <table class="data-table">
+            <thead><tr>
+                <th>Time</th>
+                <th>URLs</th>
+                <th>Sources</th>
+                <th>Outcome</th>
+            </tr></thead>
+            <tbody id="history-body">
+                <tr><td colspan="4" class="empty-state">Loading history...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card" id="results-card" style="display:none; margin-top: 2rem;">
+    <div class="card-header">
+        <h3><i class="ri-terminal-box-line"></i> Submission Results</h3>
+        <button class="btn btn-ghost btn-sm" onclick="clearResults()">Clear</button>
+    </div>
+    <div class="card-body">
+        <div id="submission-logs" style="font-family: monospace; font-size: 0.85rem; line-height: 1.6;">
+            <!-- Logs go here -->
+        </div>
+    </div>
+</div>
+
+<style>
+    .tab-pane { animation: fadeIn 0.3s ease; }
+    input[type="checkbox"] {
+        accent-color: var(--primary);
+        width: 16px; height: 16px;
+    }
+    .log-entry { margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--ghost); }
+    .log-success { color: var(--secondary); }
+    .log-error { color: var(--error); }
+    .log-info { color: var(--primary); font-weight: 600; margin-top: 1rem; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentTab = 'single';
+let sitemapUrls = [];
+
+(async () => {
+    loadHistory();
+    // Load the key hint
+    try {
+        const config = await apiCall('/api/v1/admin/indexing/bing-config');
+        if (config.key) document.getElementById('key-hint').textContent = config.key;
+    } catch(e) {}
+})();
+
+async function loadHistory() {
+    try {
+        const history = await apiCall('/api/v1/admin/indexing/history');
+        const tbody = document.getElementById('history-body');
+        if (!history.length) {
+            tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No submission history found</td></tr>';
+            return;
+        }
+        tbody.innerHTML = history.map(h => `<tr>
+            <td><div style="font-size:0.75rem">${new Date(h.timestamp).toLocaleString()}</div></td>
+            <td><div class="truncate" title="${h.urls.join(', ')}">${h.urls.length} URLs</div></td>
+            <td>${h.targets.map(t => `<span class="badge badge-violet">${t}</span>`).join(' ')}</td>
+            <td>
+                <span class="badge badge-success">G: ${h.google_success}</span>
+                <span class="badge badge-success">B: ${h.bing_success}</span>
+            </td>
+        </tr>`).join('');
+    } catch(e) { console.error(e); }
+}
+
+function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+    
+    document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
+    document.getElementById('content-' + tab).style.display = 'block';
+}
+
+async function fetchSitemap() {
+    const sitemapUrl = document.getElementById('sitemap-url').value;
+    if (!sitemapUrl) return showToast('Please enter sitemap URL', 'error');
+
+    const btn = event.currentTarget;
+    const oldText = btn.innerHTML;
+    btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Fetching...';
+    btn.disabled = true;
+
+    try {
+        const res = await apiCall('/api/v1/admin/indexing/fetch-sitemap', 'POST', { sitemap_url: sitemapUrl });
+        sitemapUrls = res.urls || [];
+        
+        document.getElementById('sitemap-preview').style.display = 'block';
+        document.getElementById('sitemap-count').textContent = `Found ${sitemapUrls.length} URLs`;
+        document.getElementById('sitemap-list').innerHTML = sitemapUrls.map(u => `<div class="truncate">${esc(u)}</div>`).join('');
+        
+        showToast(`Successfully fetched ${sitemapUrls.length} URLs`);
+    } catch(e) {
+        showToast(e.message, 'error');
+    } finally {
+        btn.innerHTML = oldText;
+        btn.disabled = false;
+    }
+}
+
+function toggleAdvanced() {} // removed
+
+async function submitIndexing() {
+    let urls = [];
+    if (currentTab === 'single') {
+        const u = document.getElementById('single-url').value;
+        if (!u) return showToast('URL is required', 'error');
+        urls = [u];
+    } else if (currentTab === 'bulk') {
+        urls = document.getElementById('bulk-urls').value.split('\n').map(u => u.trim()).filter(u => u);
+        if (!urls.length) return showToast('At least one URL is required', 'error');
+    } else if (currentTab === 'sitemap') {
+        if (!sitemapUrls.length) return showToast('Please fetch a sitemap first', 'error');
+        urls = sitemapUrls;
+    }
+
+    const targets = [];
+    if (document.getElementById('target-google').checked) targets.push('google');
+    if (document.getElementById('target-bing').checked) targets.push('bing');
+    if (!targets.length) return showToast('Select at least one search engine', 'error');
+
+    const action = document.getElementById('google-action').value;
+    const btn = document.getElementById('submit-btn');
+    btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Processing...';
+    btn.disabled = true;
+
+    try {
+        const res = await apiCall('/api/v1/admin/indexing/submit', 'POST', { urls, targets, action });
+        displayResults(res.results);
+        loadHistory();
+        showToast('Processing complete');
+    } catch(e) {
+        showToast(e.message, 'error');
+    } finally {
+        btn.innerHTML = '<i class="ri-send-plane-fill"></i> Process Indexing';
+        btn.disabled = false;
+    }
+}
+
+function displayResults(results) {
+    const card = document.getElementById('results-card');
+    const logs = document.getElementById('submission-logs');
+    card.style.display = 'block';
+    
+    let html = '';
+    
+    if (results.google) {
+        html += `<div class="log-info"><i class="ri-google-fill"></i> Google Indexing Results</div>`;
+        if (results.google.success.length) {
+            html += `<div class="log-success">Successfully submitted ${results.google.success.length} URLs</div>`;
+        }
+        results.google.failed.forEach(item => {
+            const errStr = typeof item.error === 'object' ? JSON.stringify(item.error) : item.error;
+            html += `<div class="log-error">URL: ${esc(item.url || 'Batch')}<br>Error: ${esc(errStr)}</div>`;
+        });
+    }
+
+    if (results.bing) {
+        html += `<div class="log-info"><i class="ri-edge-fill"></i> Bing IndexNow Results</div>`;
+        if (results.bing.success.length) {
+            html += `<div class="log-success">Successfully submitted ${results.bing.success.length} URLs</div>`;
+        }
+        results.bing.failed.forEach(err => {
+            html += `<div class="log-error">Error: ${esc(err)}</div>`;
+        });
+    }
+
+    logs.innerHTML = html + logs.innerHTML;
+    card.scrollIntoView({ behavior: 'smooth' });
+}
+
+async function testBingKey() {
+    try {
+        const config = await apiCall('/api/v1/admin/indexing/bing-config');
+        if (!config.key) return showToast('BING_API_KEY / INDEXNOW_KEY not set in .env', 'error');
+        
+        // Use the current origin (e.g. localhost:5000) for testing
+        const testUrl = `${window.location.origin}/${config.key}.txt`;
+        window.open(testUrl, '_blank');
+        showToast('Opening local key check... If this works, your dashboard is correctly serving the key.');
+    } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function inspectURL(url) {
+    if (!url && currentTab === 'single') url = document.getElementById('single-url').value;
+    if (!url) return showToast('Please enter/select a URL', 'error');
+
+    showToast('Inspecting via Search Console API...');
+    try {
+        const res = await apiCall('/api/v1/admin/indexing/google-inspect', 'POST', { url });
+        
+        // Show in a simple alert or log for now, better yet, a modal
+        const status = res.inspectionResult?.indexStatusResult?.verdict || 'Unknown';
+        const coverage = res.inspectionResult?.indexStatusResult?.coverageState || 'No data';
+        
+        const log = document.getElementById('submission-logs');
+        document.getElementById('results-card').style.display = 'block';
+        log.innerHTML = `<div class="log-info">🔍 Inspection: ${esc(url)}</div>
+        <div class="${status === 'PASS' ? 'log-success' : 'log-error'}">Status: ${status}</div>
+        <div style="font-size:0.75rem; color:var(--outline)">${coverage}</div>
+        <hr style="border:0; border-top:1px solid var(--ghost); margin:0.5rem 0">` + log.innerHTML;
+        
+    } catch(e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function submitSitemapToSC() {
+    const sitemapUrl = document.getElementById('sitemap-url').value;
+    if (!sitemapUrl) return showToast('Please enter sitemap URL', 'error');
+
+    try {
+        const res = await apiCall('/api/v1/admin/indexing/google-sc-sitemap', 'POST', { sitemap_url: sitemapUrl });
+        showToast(res.message);
+    } catch(e) {
+        showToast(e.message, 'error');
+    }
+}
+
+function clearResults() {
+    document.getElementById('submission-logs').innerHTML = '';
+    document.getElementById('results-card').style.display = 'none';
+}
+</script>
+{% endblock %}
