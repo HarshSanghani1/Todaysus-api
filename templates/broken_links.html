@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Link Analyzer{% endblock %}
+{% block page_title %}Internal Link Analyzer (SEO){% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-primary" onclick="analyzeLinks()"><i class="ri-refresh-line"></i> Run Full Scan</button>
+{% endblock %}
+
+{% block content %}
+<div class="card fade-in" style="box-shadow: 0 8px 30px rgba(0,0,0,0.15);">
+    <div class="card-header" style="border-bottom: 1px solid var(--ghost); display:flex; justify-content:space-between;">
+        <h3><i class="ri-link-unlink-M" style="color:var(--error)"></i> Broken Internal Links</h3>
+        <span class="badge badge-warning" id="scan-status" style="display:none;">Scanning...</span>
+    </div>
+    <div style="overflow-x:auto;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width:30%">Source Article</th>
+                    <th style="width:30%">Dead Link Target</th>
+                    <th style="width:30%">Suggested Replacement</th>
+                    <th style="width:10%;text-align:right;">Action</th>
+                </tr>
+            </thead>
+            <tbody id="links-body">
+                <tr><td colspan="4" class="empty-state">Click "Run Full Scan" to analyze all content</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Simple Levenshtein distance for string matching
+function levenshteinDistance(a, b) {
+    const matrix = [];
+    let i, j;
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    for (i = 0; i <= b.length; i++) { matrix[i] = [i]; }
+    for (j = 0; j <= a.length; j++) { matrix[0][j] = j; }
+    for (i = 1; i <= b.length; i++) {
+        for (j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+function findClosestSlug(brokenSlug, allSlugs) {
+    let closest = null;
+    let minDistance = Infinity;
+    const cleanBroken = brokenSlug.replace('/articles/', '').replace(/^\//, '').trim();
+
+    for (const slug of allSlugs) {
+        const cleanSlug = slug.replace('/articles/', '');
+        const dist = levenshteinDistance(cleanBroken, cleanSlug);
+        // Add keyword matching logic: if cleanSlug includes a chunk of broken
+        if (dist < minDistance || cleanSlug.includes(cleanBroken.split('-')[0])) {
+            if(dist < minDistance) {
+                minDistance = dist;
+                closest = slug;
+            }
+        }
+    }
+    return minDistance <= 15 ? closest : 'No close match found'; // Threshold for reasonable matches
+}
+
+async function analyzeLinks() {
+    const tbody = document.getElementById('links-body');
+    const status = document.getElementById('scan-status');
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Fetching & analyzing content... This may take a moment.</td></tr>';
+    status.style.display = 'inline-flex';
+    status.textContent = 'Scanning...';
+    status.className = 'badge badge-warning';
+
+    try {
+        // Fetch full articles with content
+        const articles = await apiCall('/api/v1/admin/articles?full=true');
+        
+        // Build valid slugs dictionary
+        const validSlugs = new Set();
+        const allSlugsArr = [];
+        articles.forEach(a => {
+            const path = '/articles/' + a.slug;
+            validSlugs.add(path);
+            allSlugsArr.push(path);
+            // Ignore trailing slash versions
+            validSlugs.add(path + '/');
+        });
+
+        const brokenLinksData = [];
+
+        articles.forEach(article => {
+            if(!article.content_html) return;
+            const doc = new DOMParser().parseFromString(article.content_html, 'text/html');
+            const anchors = doc.querySelectorAll('a[href]');
+            
+            anchors.forEach(a => {
+                const href = a.getAttribute('href');
+                // Check if it's an internal /articles/ link
+                if (href && (href.startsWith('/articles/') || href.startsWith('http://todaysus') || href.startsWith('https://todaysus'))) {
+                    // Extract path
+                    let path = href;
+                    try { const u = new URL(href); path = u.pathname; } catch(e){}
+                    
+                    if (path.startsWith('/articles/') && !validSlugs.has(path)) {
+                        // Found a broken link!
+                        brokenLinksData.push({
+                            articleId: article._id,
+                            articleTitle: article.title,
+                            brokenPath: path,
+                            suggestion: findClosestSlug(path, allSlugsArr)
+                        });
+                    }
+                }
+            });
+        });
+
+        if (brokenLinksData.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="empty-state" style="color:var(--success);"><i class="ri-checkbox-circle-fill" style="font-size:2rem;"></i><br><br>All internal links are completely healthy!</td></tr>';
+            status.textContent = 'Healthy';
+            status.className = 'badge badge-success';
+        } else {
+            tbody.innerHTML = brokenLinksData.map(b => `
+                <tr>
+                    <td>
+                        <div class="truncate" style="font-weight:600; color:var(--on-surface);">
+                            ${esc(b.articleTitle)}
+                        </div>
+                    </td>
+                    <td><span style="color:var(--error); font-family:monospace; font-size:0.8rem;">${esc(b.brokenPath)}</span></td>
+                    <td>
+                        <span class="badge ${b.suggestion !== 'No close match found' ? 'badge-info' : 'badge-ghost'}" style="text-transform:none; font-family:monospace;">
+                            ${esc(b.suggestion)}
+                        </span>
+                    </td>
+                    <td style="text-align:right;">
+                        <a href="/articles/${b.articleId}/edit" class="btn btn-ghost btn-sm" target="_blank">Fix Link <i class="ri-external-link-line"></i></a>
+                    </td>
+                </tr>
+            `).join('');
+            status.textContent = `${brokenLinksData.length} Broken Found`;
+            status.className = 'badge badge-danger';
+        }
+
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" class="empty-state" style="color:var(--error);">Scan failed: ${e.message}</td></tr>`;
+        status.style.display = 'none';
+    }
+}
+</script>
+{% endblock %}

@@ -10,13 +10,16 @@
 {% endblock %}
 
 {% block content %}
-<div class="card" style="margin-bottom:1.25rem;">
+<div class="card" style="margin-bottom:1.25rem; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
     <div class="card-body" style="padding:0.85rem 1.25rem;">
         <div class="filters">
             <div class="search-bar" style="flex:1;min-width:180px;">
                 <i class="ri-search-line"></i>
                 <input type="text" class="form-control" placeholder="Search articles..." id="search-input" oninput="filterArticles()">
             </div>
+            <select class="form-control" style="width:160px;" id="filter-category" onchange="filterArticles()">
+                <option value="">All Categories</option>
+            </select>
             <select class="form-control" style="width:160px;" id="filter-status" onchange="filterArticles()">
                 <option value="">All Status</option>
                 <option value="published">Published</option>
@@ -26,7 +29,7 @@
     </div>
 </div>
 
-<div class="card">
+<div class="card" style="box-shadow: 0 8px 30px rgba(0,0,0,0.15);">
     <div style="overflow-x:auto;">
         <table class="data-table">
             <thead><tr>
@@ -49,6 +52,20 @@
 {% block scripts %}
 <script>
 let allArticles = [];
+
+async function init() {
+    try {
+        const cats = await apiCall('/api/v1/admin/categories');
+        const sel = document.getElementById('filter-category');
+        cats.forEach(c => {
+            const o = document.createElement('option');
+            o.value = c.name;
+            o.textContent = c.name;
+            sel.appendChild(o);
+        });
+    } catch(e) { console.error(e); }
+    loadArticles();
+}
 
 async function loadArticles() {
     try {
@@ -82,9 +99,11 @@ function renderArticles(articles) {
 function filterArticles() {
     const q = document.getElementById('search-input').value.toLowerCase();
     const s = document.getElementById('filter-status').value;
+    const c = document.getElementById('filter-category').value;
     let f = allArticles;
     if (q) f = f.filter(a => a.title.toLowerCase().includes(q));
     if (s) f = f.filter(a => a.status === s);
+    if (c) f = f.filter(a => a.category?.name === c);
     renderArticles(f);
 }
 
@@ -94,6 +113,6 @@ async function delArticle(id) {
     catch (e) { showToast(e.message, 'error'); }
 }
 
-loadArticles();
+init();
 </script>
 {% endblock %}

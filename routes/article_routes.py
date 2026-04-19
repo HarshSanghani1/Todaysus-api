@@ -54,7 +54,7 @@ def admin_list():
     query = {"is_deleted": False}
     if status:
         query["status"] = status
-    projection = {"content_html": 0}
+    projection = {"content_html": 0} if request.args.get("full") != "true" else None
     articles = list(mongo.db.articles.find(query, projection).sort("created_at", -1))
     return jsonify(sanitize_docs(articles))
 

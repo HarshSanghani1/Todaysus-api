@@ -136,6 +136,18 @@ def horoscopes_page():
 def indexing_page():
     return render_template("indexing.html")
 
+@app.route("/analytics")
+def analytics_page():
+    return render_template("analytics.html")
+
+@app.route("/article-performance")
+def article_performance_page():
+    return render_template("article_performance.html")
+
+@app.route("/broken-links")
+def broken_links_page():
+    return render_template("broken_links.html")
+
 @app.route("/<key>.txt")
 def bing_indexing_key(key):
     api_key = os.environ.get("INDEXNOW_KEY") or os.environ.get("BING_API_KEY")

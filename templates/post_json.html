@@ -160,12 +160,105 @@ function validateJson() {
     }
 }
 
+// Simple Levenshtein distance for string matching
+function levenshteinDistance(a, b) {
+    const matrix = [];
+    let i, j;
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    for (i = 0; i <= b.length; i++) { matrix[i] = [i]; }
+    for (j = 0; j <= a.length; j++) { matrix[0][j] = j; }
+    for (i = 1; i <= b.length; i++) {
+        for (j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+async function processSmartContent(htmlContent) {
+    try {
+        const articles = await apiCall('/api/v1/admin/articles');
+        const validSlugs = new Set(articles.map(a => '/articles/' + a.slug));
+        const allSlugs = Array.from(validSlugs);
+
+        const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
+        let modified = false;
+
+        // 1. Check for Broken Links (404s)
+        const anchors = doc.querySelectorAll('a[href^="/articles/"]');
+        for (const a of anchors) {
+            const href = a.getAttribute('href');
+            if (href && href.startsWith('/articles/') && !validSlugs.has(href)) {
+                const cleanBroken = href.replace('/articles/', '').replace(/^\//, '').trim();
+                let closest = null, minD = Infinity;
+                for (const slug of allSlugs) {
+                    const cleanSlug = slug.replace('/articles/', '');
+                    const dist = levenshteinDistance(cleanBroken, cleanSlug);
+                    if (dist < minD || cleanSlug.includes(cleanBroken.split('-')[0])) {
+                        if(dist < minD) { minD = dist; closest = slug; }
+                    }
+                }
+                const suggestion = minD <= 15 ? closest : null;
+                const msg = `WARNING (JSON Payload):\nThe link "${href}" is broken (404).\n\n` + 
+                            (suggestion ? `Suggest replacing with: ${suggestion}` : `No close matches found.`);
+                if (suggestion && confirm(msg + "\n\nReplace and continue?")) {
+                    a.setAttribute('href', suggestion);
+                    modified = true;
+                }
+            }
+        }
+
+        // 2. Auto-Interlink (Suggest linking plain text to articles)
+        const textNodes = [];
+        const walk = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null, false);
+        let node;
+        while(node = walk.nextNode()) {
+            if (node.parentElement.tagName !== 'A' && node.parentElement.tagName !== 'SCRIPT' && node.parentElement.tagName !== 'STYLE') {
+                textNodes.push(node);
+            }
+        }
+
+        articles.forEach(art => {
+            if (art.title.length < 8) return; // avoid short generic titles
+            const regex = new RegExp(`\\b(${art.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})\\b`, 'gi');
+            
+            textNodes.forEach(node => {
+                if (regex.test(node.nodeValue) && !htmlContent.includes(`/articles/${art.slug}`)) {
+                    if (confirm(`SMART SUGGESTION:\nThe text "${art.title}" matches another article.\n\nWould you like to auto-link this keyword in your JSON content?`)) {
+                        const span = document.createElement('span');
+                        span.innerHTML = node.nodeValue.replace(regex, `<a href="/articles/${art.slug}">$1</a>`);
+                        node.parentNode.replaceChild(span, node);
+                        modified = true;
+                    }
+                }
+            });
+        });
+
+        return modified ? doc.body.innerHTML : htmlContent;
+    } catch(e) {
+        console.error("Smart processing failed", e);
+        return htmlContent;
+    }
+}
+
 async function pushJson() {
     const raw = document.getElementById('json_raw').value.trim();
     if (!raw) { showToast('Paste JSON first', 'error'); return; }
     
     try {
         const data = JSON.parse(raw);
+        
+        if (data.content_html) {
+            const updatedHtml = await processSmartContent(data.content_html);
+            if (updatedHtml === null) return; // user aborted
+            data.content_html = updatedHtml;
+        }
+
         await apiCall('/api/v1/admin/articles', 'POST', data);
         showToast('Article created via JSON!');
         setTimeout(() => { location.href = '/articles'; }, 800);

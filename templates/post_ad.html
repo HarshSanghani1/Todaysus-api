@@ -45,7 +45,10 @@
                 </div>
                 <div class="form-group" style="margin:0;">
                     <label>Image Source URL *</label>
-                    <input type="text" id="image_url" class="form-control" placeholder="Paste full image URL" oninput="updatePreview()">
+                    <div style="display:flex; gap:0.5rem;">
+                        <input type="text" id="image_url" class="form-control" placeholder="Paste full image URL" oninput="updatePreview()">
+                        <button class="btn btn-ghost" onclick="openGlobalMedia((url) => { document.getElementById('image_url').value = url; updatePreview(); })" style="padding: 0.5rem;"><i class="ri-folder-open-line"></i></button>
+                    </div>
                 </div>
             </div>
         </div>

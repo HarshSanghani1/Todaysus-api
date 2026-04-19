@@ -7,11 +7,10 @@
     <meta name="description" content="Today's US Admin Panel — The Digital Curator">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
     <style>
         /* ═══════════════════════════════════════════════════
-           LUMINA EDITORIAL — The Digital Curator Design System
-           Today's US Admin Panel
-           Stitch MCP Design Tokens
         ═══════════════════════════════════════════════════ */
 
         :root {
@@ -452,12 +451,59 @@
         .fade-in { animation: fadeIn 0.3s var(--ease); }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--outline-variant); border-radius: 2px; }
+        /* ═══ DROPDOWN ═══ */
+        .dropdown { position: relative; display: inline-block; }
+        .dropdown-content {
+            display: none; position: absolute; right: 0; top: 100%; mt:0.5rem;
+            background-color: var(--surface-2); min-width: 180px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.5); z-index: 100;
+            border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--surface-4);
+        }
+        .dropdown.active .dropdown-content { display: block; animation: fadeIn 0.2s; }
+        .dropdown-item {
+            color: var(--on-surface); padding: 12px 16px; text-decoration: none;
+            display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 500;
+            transition: 0.1s; cursor: pointer; border-bottom: 1px solid var(--surface-3);
+        }
+        .dropdown-item:last-child { border-bottom: none; }
+        .dropdown-item:hover { background-color: var(--surface-3); color: var(--primary); }
 
-        @media (max-width: 1100px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
-        @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; } .stats-grid { grid-template-columns: 1fr 1fr; } .form-row { grid-template-columns: 1fr; } .content { padding: 1rem; } }
+        /* Media grid */
+        .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-top:1rem; }
+        .media-item { position: relative; border-radius: var(--radius-xs); overflow: hidden; cursor: pointer; border: 2px solid transparent; aspect-ratio: 1; }
+        .media-item:hover { border-color: var(--primary); }
+        .media-item img { width: 100%; height: 100%; object-fit: cover; }
+        .media-item.selected { border-color: var(--primary-container); }
+
+        /* ═══ COMMAND PALETTE ═══ */
+        .cmd-palette {
+            display: none; position: fixed; top: 15%; left: 50%; transform: translateX(-50%);
+            width: 100%; max-width: 500px; background: var(--surface-2); border-radius: 12px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.5), 0 0 0 1px var(--surface-4); z-index: 1000;
+            overflow: hidden; animation: modalSlide 0.2s var(--ease);
+        }
+        .cmd-palette.active { display: block; }
+        .cmd-input-wrapper { display: flex; align-items: center; padding: 1rem; border-bottom: 1px solid var(--surface-4); gap: 0.75rem; }
+        .cmd-input { flex: 1; background: transparent; border: none; color: var(--on-surface); font-size: 1rem; outline: none; }
+        .cmd-results { max-height: 400px; overflow-y: auto; padding: 0.5rem; }
+        .cmd-item { 
+            display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 1rem; 
+            border-radius: 8px; cursor: pointer; color: var(--on-surface-variant); transition: 0.1s;
+        }
+        .cmd-item:hover, .cmd-item.selected { background: var(--surface-4); color: var(--primary); }
+        .cmd-item i { font-size: 1.1rem; opacity: 0.7; }
+        .cmd-shortcut { margin-left: auto; font-size: 0.7rem; color: var(--outline); background: var(--surface-4); padding: 2px 6px; border-radius: 4px; }
+
+        ::-webkit-scrollbar { width: 4px; }
+        @media (max-width: 768px) { 
+            .sidebar { position: fixed; left: -260px; z-index: 500; height: 100vh; transition: 0.3s; }
+            .sidebar.mobile-active { left: 0; display: block; }
+            .main { margin-left: 0; } 
+            .stats-grid { grid-template-columns: 1fr 1fr; } 
+            .form-row { grid-template-columns: 1fr; } 
+            .content { padding: 1rem; }
+            .mobile-toggle { display: block !important; }
+        }
     </style>
 </head>
 <body>
@@ -474,10 +520,19 @@
             <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">
                 <i class="ri-dashboard-3-line"></i> Dashboard
             </a>
+            <a href="/analytics" class="nav-link {% if request.path == '/analytics' %}active{% endif %}">
+                <i class="ri-line-chart-line"></i> Analytics
+            </a>
+            <a href="/article-performance" class="nav-link {% if request.path == '/article-performance' %}active{% endif %}">
+                <i class="ri-bar-chart-2-line"></i> Performance
+            </a>
 
             <div class="nav-section">Content</div>
-            <a href="/articles" class="nav-link {% if '/articles' in request.path %}active{% endif %}">
+            <a href="/articles" class="nav-link {% if request.path == '/articles' %}active{% endif %}">
                 <i class="ri-newspaper-line"></i> Articles
+            </a>
+            <a href="/articles/json" class="nav-link {% if request.path == '/articles/json' %}active{% endif %}">
+                <i class="ri-braces-line"></i> Push JSON
             </a>
             <a href="/categories" class="nav-link {% if '/categories' in request.path %}active{% endif %}">
                 <i class="ri-folder-3-line"></i> Categories
@@ -492,6 +547,9 @@
             <div class="nav-section">SEO Tools</div>
             <a href="/indexing" class="nav-link {% if '/indexing' in request.path %}active{% endif %}">
                 <i class="ri-search-eye-line"></i> Indexing Tool
+            </a>
+            <a href="/broken-links" class="nav-link {% if '/broken-links' in request.path %}active{% endif %}">
+                <i class="ri-link-unlink-M"></i> Broken Links
             </a>
 
             <div class="nav-section">Monetization</div>
@@ -520,10 +578,62 @@
 
     <div class="main">
         <header class="topbar">
-            <h1 class="topbar-title">{% block page_title %}Dashboard{% endblock %}</h1>
-            <div class="topbar-actions">{% block topbar_actions %}{% endblock %}</div>
+            <div style="display:flex; align-items:center; gap:1rem;">
+                <button class="action-btn mobile-toggle" style="display:none;" onclick="toggleSidebar()"><i class="ri-menu-2-line" style="font-size:1.5rem;"></i></button>
+                <h1 class="topbar-title">{% block page_title %}Dashboard{% endblock %}</h1>
+            </div>
+            <div class="topbar-actions">
+                {% block topbar_actions %}{% endblock %}
+                <!-- Quick Actions Dropdown -->
+                <div class="dropdown" id="quickActionsDropdown">
+                    <button class="btn btn-primary" onclick="toggleQuickActions()"><i class="ri-add-circle-line"></i> Quick Actions</button>
+                    <div class="dropdown-content">
+                        <a href="/articles/new" class="dropdown-item"><i class="ri-article-line"></i> New Post</a>
+                        <a onclick="openGlobalMedia()" class="dropdown-item"><i class="ri-image-add-line"></i> Upload Media</a>
+                        <a href="/categories" class="dropdown-item"><i class="ri-folder-add-line"></i> Add Category</a>
+                    </div>
+                </div>
+            </div>
         </header>
         <div class="content fade-in">{% block content %}{% endblock %}</div>
+    </div>
+
+    <!-- Media Library Modal (Global) -->
+    <div class="modal-overlay" id="global-media-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3><i class="ri-image-line"></i> Media Library</h3>
+                <button class="modal-close" onclick="closeGlobalMedia()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="tabs">
+                    <div class="tab-group" style="margin-bottom: 1rem;">
+                        <div class="tab active" onclick="switchMediaTab('library')" id="tab-library">Library</div>
+                        <div class="tab" onclick="switchMediaTab('upload')" id="tab-upload">Upload</div>
+                    </div>
+                </div>
+                
+                <div id="media-library-view">
+                    <div class="media-grid" id="global-media-grid"></div>
+                </div>
+
+                <div id="media-upload-view" style="display:none; text-align:center; padding: 2rem;">
+                    <i class="ri-upload-cloud-line" style="font-size: 3rem; color: var(--outline);"></i>
+                    <p style="color:var(--on-surface-variant); margin: 1rem 0;">Drag & Drop or click to upload</p>
+                    <input type="file" id="media-file-input" accept="image/*" style="display:none;" onchange="handleFileUpload(event)">
+                    <button class="btn btn-primary" onclick="document.getElementById('media-file-input').click()">Browse Files</button>
+                    <p style="margin-top: 1rem; font-size: 0.8rem; color: var(--outline);">Or paste an image URL:</p>
+                    <div style="display:flex; gap: 0.5rem; margin-top: 0.5rem;">
+                        <input type="text" id="url-upload-input" class="form-control" placeholder="https://...">
+                        <button class="btn btn-ghost" onclick="handleUrlUpload()">Add</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeGlobalMedia()">Close</button>
+                <button class="btn btn-primary" id="media-select-btn" style="display:none;" onclick="selectMedia()">Copy URL</button>
+            </div>
+        </div>
     </div>
 
     <div class="toast-container" id="toast-container"></div>
@@ -538,7 +648,11 @@
             setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 3500);
         }
 
-        async function apiCall(url, method, body) {
+        function toggleSidebar() {
+            document.querySelector('.sidebar').classList.toggle('mobile-active');
+        }
+
+        async function apiCall(url, method = 'GET', body = null) {
             method = method || 'GET';
             const opts = { method, headers: { 'Content-Type': 'application/json' } };
             if (body) opts.body = JSON.stringify(body);
@@ -569,7 +683,164 @@
         }
 
         function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+        // --- Quick Actions ---
+        function toggleQuickActions() {
+            const dp = document.getElementById('quickActionsDropdown');
+            dp.classList.toggle('active');
+        }
+        window.onclick = function(e) {
+            if (!e.target.matches('.dropdown button') && !e.target.closest('.dropdown button')) {
+                document.querySelectorAll('.dropdown.active').forEach(d => d.classList.remove('active'));
+            }
+        }
+
+        // --- Media Library Engine (LocalStorage Simulator) ---
+        let globalMediaItems = JSON.parse(localStorage.getItem('admin_media_library') || '[]');
+        let selectedMediaUrl = null;
+        let onMediaSelectCallback = null;
+
+        function openGlobalMedia(callback) {
+            onMediaSelectCallback = callback;
+            document.getElementById('global-media-modal').classList.add('active');
+            selectedMediaUrl = null;
+            document.getElementById('media-select-btn').style.display = callback ? 'block' : 'none';
+            if(callback) {
+                document.getElementById('media-select-btn').textContent = "Select Image";
+            } else {
+                document.getElementById('media-select-btn').style.display = 'block';
+                document.getElementById('media-select-btn').textContent = "Copy URL";
+            }
+            switchMediaTab('library');
+        }
+        function closeGlobalMedia() { document.getElementById('global-media-modal').classList.remove('active'); }
+
+        function switchMediaTab(tab) {
+            document.getElementById('tab-library').classList.remove('active');
+            document.getElementById('tab-upload').classList.remove('active');
+            document.getElementById('tab-' + tab).classList.add('active');
+            if (tab === 'library') {
+                document.getElementById('media-library-view').style.display = 'block';
+                document.getElementById('media-upload-view').style.display = 'none';
+                renderMediaGrid();
+            } else {
+                document.getElementById('media-library-view').style.display = 'none';
+                document.getElementById('media-upload-view').style.display = 'block';
+            }
+        }
+
+        function renderMediaGrid() {
+            const grid = document.getElementById('global-media-grid');
+            if (globalMediaItems.length === 0) {
+                grid.style.display = 'block';
+                grid.innerHTML = '<div class="empty-state">No media. Upload some images to get started.</div>';
+                return;
+            }
+            grid.style.display = 'grid';
+            grid.innerHTML = globalMediaItems.map((url, i) => `
+                <div class="media-item" onclick="chooseMedia(this, '${url}')">
+                    <img src="${url}" alt="media">
+                </div>
+            `).join('');
+        }
+
+        function chooseMedia(el, url) {
+            document.querySelectorAll('.media-item').forEach(m => m.classList.remove('selected'));
+            el.classList.add('selected');
+            selectedMediaUrl = url;
+            document.getElementById('media-select-btn').style.display = 'block';
+        }
+
+        function selectMedia() {
+            if (!selectedMediaUrl) { showToast('Select an image first', 'error'); return; }
+            if (onMediaSelectCallback) {
+                onMediaSelectCallback(selectedMediaUrl);
+            } else {
+                navigator.clipboard.writeText(selectedMediaUrl);
+                showToast('Image URL copied to clipboard');
+            }
+            closeGlobalMedia();
+        }
+
+        function saveMedia(url) {
+            if(!globalMediaItems.includes(url)) {
+                globalMediaItems.unshift(url);
+                localStorage.setItem('admin_media_library', JSON.stringify(globalMediaItems));
+            }
+            showToast('Media added to library');
+            switchMediaTab('library');
+        }
+
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => { saveMedia(evt.target.result); };
+            reader.readAsDataURL(file);
+            e.target.value = '';
+        }
+
+        function handleUrlUpload() {
+            const url = document.getElementById('url-upload-input').value.trim();
+            if(!url) return;
+            saveMedia(url);
+            document.getElementById('url-upload-input').value = '';
+        }
+
+        // --- Command Palette ---
+        const cmdPalette = document.getElementById('cmd-palette');
+        const cmdInput = document.getElementById('cmd-input');
+        const commands = [
+            { name: 'Dashboard', url: '/', icon: 'ri-dashboard-3-line' },
+            { name: 'Analytics', url: '/analytics', icon: 'ri-line-chart-line' },
+            { name: 'Article Performance', url: '/article-performance', icon: 'ri-bar-chart-2-line' },
+            { name: 'Article List', url: '/articles', icon: 'ri-newspaper-line' },
+            { name: 'New Article', url: '/articles/new', icon: 'ri-add-circle-line' },
+            { name: 'Push JSON Article', url: '/articles/json', icon: 'ri-braces-line' },
+            { name: 'Categories', url: '/categories', icon: 'ri-folder-3-line' },
+            { name: 'Topics', url: '/topics', icon: 'ri-hashtag' },
+            { name: 'Horoscopes', url: '/horoscopes', icon: 'ri-moon-clear-line' },
+            { name: 'Indexing Tool', url: '/indexing', icon: 'ri-search-eye-line' },
+            { name: 'Broken Link Analyzer', url: '/broken-links', icon: 'ri-link-unlink-M' },
+            { name: 'Ad Metrics', url: '/ads/dashboard', icon: 'ri-bar-chart-box-line' },
+            { name: 'Ad Campaigns', url: '/ads', icon: 'ri-advertisement-line' },
+            { name: 'Authors', url: '/authors', icon: 'ri-quill-pen-line' },
+            { name: 'Subscribers', url: '/subscribers', icon: 'ri-mail-star-line' }
+        ];
+
+        document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                cmdPalette.classList.add('active');
+                cmdInput.focus();
+            }
+            if (e.key === 'Escape') cmdPalette.classList.remove('active');
+        });
+
+        function filterCmd() {
+            const q = cmdInput.value.toLowerCase();
+            const results = commands.filter(c => c.name.toLowerCase().includes(q));
+            document.getElementById('cmd-results').innerHTML = results.map(c => `
+                <div class="cmd-item" onclick="location.href='${c.url}'">
+                    <i class="${c.icon}"></i>
+                    <span>${c.name}</span>
+                    <span class="cmd-shortcut">⏎</span>
+                </div>
+            `).join('');
+        }
+
     </script>
+    <div class="cmd-palette" id="cmd-palette">
+        <div class="cmd-input-wrapper">
+            <i class="ri-search-line"></i>
+            <input type="text" class="cmd-input" id="cmd-input" placeholder="Type a command or page name..." oninput="filterCmd()">
+        </div>
+        <div class="cmd-results" id="cmd-results">
+            <!-- Defaults -->
+            <div class="cmd-item" onclick="location.href='/articles/new'"><i class="ri-article-line"></i><span>New Article</span><span class="cmd-shortcut">⏎</span></div>
+            <div class="cmd-item" onclick="location.href='/analytics'"><i class="ri-line-chart-line"></i><span>View Analytics</span><span class="cmd-shortcut">⏎</span></div>
+        </div>
+    </div>
     {% block scripts %}{% endblock %}
 </body>
 </html>
