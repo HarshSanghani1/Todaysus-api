@@ -50,6 +50,27 @@
     <!-- Sidebar -->
     <div style="display:flex;flex-direction:column;gap:1.5rem;position:sticky;top:5rem;">
         
+        <!-- SEO Score Card -->
+        <div class="card" style="border-top:3px solid var(--primary);">
+            <div class="card-header" style="justify-content:space-between;">
+                <h3><i class="ri-pulse-line"></i> SEO Score</h3>
+                <span id="seo-score-full" style="font-weight:800; color:var(--primary); font-size:1.1rem;">0%</span>
+            </div>
+            <div class="card-body" style="padding:1rem;">
+                <div style="height:6px; background:var(--surface-4); border-radius:10px; overflow:hidden; margin-bottom:1rem;">
+                    <div id="seo-progress-bar" style="width:0%; height:100%; background:linear-gradient(to right, #ef4444, #f59e0b, #10b981); transition:width 0.4s ease;"></div>
+                </div>
+                
+                <div id="seo-checklist" style="display:flex; flex-direction:column; gap:0.6rem; font-size:0.75rem;">
+                    <div class="seo-item" data-id="title-len"><i class="ri-checkbox-blank-circle-line"></i> Title Length (50-70)</div>
+                    <div class="seo-item" data-id="excerpt-len"><i class="ri-checkbox-blank-circle-line"></i> Excerpt Quality</div>
+                    <div class="seo-item" data-id="word-count"><i class="ri-checkbox-blank-circle-line"></i> Minimum 300 Words</div>
+                    <div class="seo-item" data-id="img-alt"><i class="ri-checkbox-blank-circle-line"></i> Image Alt Tags</div>
+                    <div class="seo-item" data-id="slug-check"><i class="ri-checkbox-blank-circle-line"></i> SEO Friendly Slug</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Publishing -->
         <div class="card" style="border-top:3px solid var(--primary-container);">
             <div class="card-header"><h3><i class="ri-settings-4-line"></i> Publishing</h3></div>
@@ -167,6 +188,56 @@ const quill = new Quill('#quill-editor', {
         ]
     }
 });
+
+function updateSEOScore() {
+    const title = document.getElementById('title').value.trim();
+    const excerpt = document.getElementById('excerpt').value.trim();
+    const slug = document.getElementById('slug').value.trim();
+    const content = quill.getText().trim();
+    const html = quill.root.innerHTML;
+    
+    let score = 0;
+    const items = {
+        'title-len': title.length >= 50 && title.length <= 70,
+        'excerpt-len': excerpt.length >= 100 && excerpt.length <= 160,
+        'word-count': content.split(/\s+/).filter(w => w.length > 0).length >= 300,
+        'img-alt': !html.includes('<img') || !html.match(/<img(?![^>]*\balt=)[^>]*>/gi),
+        'slug-check': slug.length > 0 && slug.match(/^[a-z0-9-]+$/)
+    };
+
+    let passed = 0;
+    Object.keys(items).forEach(id => {
+        const el = document.querySelector(`.seo-item[data-id="${id}"]`);
+        if (items[id]) {
+            el.innerHTML = `<i class="ri-checkbox-circle-fill" style="color:var(--secondary)"></i> ${el.textContent}`;
+            el.style.color = "var(--on-surface)";
+            passed++;
+        } else {
+            const originalText = el.textContent.replace(/^.*? /, '');
+            el.innerHTML = `<i class="ri-checkbox-blank-circle-line" style="opacity:0.5"></i> ${originalText}`;
+            el.style.color = "var(--outline)";
+        }
+    });
+
+    score = Math.round((passed / Object.keys(items).length) * 100);
+    const bar = document.getElementById('seo-progress-bar');
+    bar.style.width = score + '%';
+    document.getElementById('seo-score-full').textContent = score + '%';
+    
+    // Change color based on score
+    if(score < 50) bar.style.background = '#ef4444';
+    else if(score < 80) bar.style.background = '#f59e0b';
+    else bar.style.background = '#10b981';
+}
+
+// Hook events
+document.getElementById('title').addEventListener('input', updateSEOScore);
+document.getElementById('excerpt').addEventListener('input', updateSEOScore);
+document.getElementById('slug').addEventListener('input', updateSEOScore);
+quill.on('text-change', updateSEOScore);
+// Initial check
+setTimeout(updateSEOScore, 1000);
+
 // Override image handler to use our Media Library!
 quill.getModule('toolbar').addHandler('image', () => {
     openGlobalMedia((url) => {
