@@ -46,12 +46,13 @@
                     <th style="width:40%">Article Title</th>
                     <th>Category</th>
                     <th>Author</th>
-                    <th>Published At</th>
-                    <th style="text-align: right;">Total Views</th>
+                    <th>Date</th>
+                    <th style="text-align: right;">Views</th>
+                    <th style="width:80px; text-align: right;">Actions</th>
                 </tr>
             </thead>
             <tbody id="top-articles-body">
-                <tr><td colspan="5" class="empty-state">Loading data...</td></tr>
+                <tr><td colspan="6" class="empty-state">Loading data...</td></tr>
             </tbody>
         </table>
     </div>
@@ -78,14 +79,20 @@
         const tbody = document.getElementById('top-articles-body');
         
         if (!top.length) { 
-            tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No articles yet</td></tr>'; 
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No articles yet</td></tr>'; 
         } else {
             tbody.innerHTML = top.map(a => `<tr>
                 <td><div class="truncate" style="font-weight:600; color:var(--on-surface);"><a href="/articles/${a._id}/edit" style="color:inherit;text-decoration:none;">${esc(a.title)}</a></div></td>
-                <td><span class="badge badge-violet">${esc(a.category?.name || '—')}</span></td>
+                <td><span class="badge badge-primary" style="background:var(--surface-4); color:var(--primary);">${esc(a.category?.name || '—')}</span></td>
                 <td>${esc(a.author?.name || '—')}</td>
-                <td><span style="color:var(--outline);">${formatDate(a.published_at)}</span></td>
+                <td><span style="color:var(--outline); font-size:0.8rem;">${formatDate(a.published_at || a.created_at)}</span></td>
                 <td style="text-align: right; font-weight:700; color:var(--primary);">${(a.view_count || 0).toLocaleString()}</td>
+                <td style="text-align: right;">
+                    <div class="action-btns" style="justify-content:flex-end;">
+                        <a href="/articles/${a._id}/edit" class="action-btn"><i class="ri-pencil-line"></i></a>
+                        ${a.status === 'published' ? `<button class="action-btn" style="color:var(--secondary)" onclick="openShareModal('${esc(a.title)}', '${a.slug}')"><i class="ri-share-line"></i></button>` : ''}
+                    </div>
+                </td>
             </tr>`).join('');
         }
     } catch(e) { console.error(e); }
