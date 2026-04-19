@@ -3,7 +3,8 @@
 {% block page_title %}{{ 'Edit Article' if article_id else 'New Article' }}{% endblock %}
 
 {% block topbar_actions %}
-<div style="display:flex;gap:0.75rem;">
+<div style="display:flex;align-items:center;gap:1rem;">
+    <span id="save-status" style="font-size:0.7rem; color:var(--outline); opacity:0.8;">Synced to local</span>
     <a href="/articles" class="btn btn-ghost"><i class="ri-arrow-left-s-line"></i> Back</a>
     <button class="btn btn-ghost" onclick="submitArticle('draft')"><i class="ri-draft-line"></i> Save Draft</button>
     <button class="btn btn-primary" onclick="submitArticle('published')"><i class="ri-send-plane-fill"></i> Publish</button>
@@ -66,6 +67,7 @@
                     <div class="seo-item" data-id="excerpt-len"><i class="ri-checkbox-blank-circle-line"></i> Excerpt Quality</div>
                     <div class="seo-item" data-id="word-count"><i class="ri-checkbox-blank-circle-line"></i> Minimum 300 Words</div>
                     <div class="seo-item" data-id="img-alt"><i class="ri-checkbox-blank-circle-line"></i> Image Alt Tags</div>
+                    <div class="seo-item" data-id="readability"><i class="ri-checkbox-blank-circle-line"></i> Good Readability</div>
                     <div class="seo-item" data-id="slug-check"><i class="ri-checkbox-blank-circle-line"></i> SEO Friendly Slug</div>
                 </div>
             </div>
@@ -86,10 +88,15 @@
                 </div>
                 <div class="form-group">
                     <label>Status</label>
-                    <select id="status" class="form-control">
+                    <select id="status" class="form-control" onchange="toggleSchedule(this.value)">
                         <option value="draft">Draft</option>
                         <option value="published">Published</option>
+                        <option value="scheduled">Scheduled</option>
                     </select>
+                </div>
+                <div class="form-group" id="schedule-box" style="display:none;">
+                    <label>Schedule Publication</label>
+                    <input type="datetime-local" id="published_at" class="form-control" style="font-size:0.8rem;">
                 </div>
             </div>
         </div>
@@ -127,6 +134,29 @@
                 <div style="display:flex; gap:0.5rem;">
                     <input type="text" id="featured_image" class="form-control" placeholder="Paste Image URL" oninput="updateImage()">
                     <button class="btn btn-ghost" onclick="openGlobalMedia((url) => { document.getElementById('featured_image').value = url; updateImage(); })" style="padding: 0.5rem;"><i class="ri-folder-open-line"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Social Media Preview -->
+        <div class="card" style="border-top:3px solid var(--secondary);">
+            <div class="card-header"><h3><i class="ri-share-line"></i> Social Preview</h3></div>
+            <div class="card-body" style="padding:1rem;">
+                <!-- Mock Facebook Card -->
+                <div style="background:var(--surface-3); border-radius:8px; overflow:hidden; border:1px solid var(--surface-4); margin-bottom:1rem;">
+                    <div id="social-image-preview" style="height:140px; background:var(--surface-4) no-repeat center/cover; display:flex; align-items:center; justify-content:center; color:var(--outline);">
+                        <i class="ri-image-2-line" style="font-size:2rem;"></i>
+                    </div>
+                    <div style="padding:0.75rem;">
+                        <div style="text-transform:uppercase; font-size:0.6rem; color:var(--primary); font-weight:700; margin-bottom:0.2rem;">TODAYSUS.COM</div>
+                        <div id="social-title-preview" style="font-weight:700; font-size:0.9rem; color:var(--on-surface); line-height:1.3; margin-bottom:0.3rem;">Article Headline...</div>
+                        <div id="social-excerpt-preview" style="font-size:0.75rem; color:var(--on-surface-variant); line-height:1.4; height:2.8rem; overflow:hidden;">The article excerpt will appear here as the meta description...</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:0.5rem; justify-content:center;">
+                    <i class="ri-facebook-box-fill" style="color:var(--outline); font-size:1.1rem;"></i>
+                    <i class="ri-twitter-x-fill" style="color:var(--outline); font-size:1.1rem;"></i>
+                    <i class="ri-linkedin-box-fill" style="color:var(--outline); font-size:1.1rem;"></i>
                 </div>
             </div>
         </div>
@@ -173,6 +203,9 @@ function generateSlug() {
     slugInput.value = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
+// Update Breadcrumbs
+document.getElementById('global-breadcrumb').innerHTML = `<a href="/">Dashboard</a> <i class="ri-arrow-right-s-line"></i> <a href="/articles">Articles</a> <i class="ri-arrow-right-s-line"></i> <span>${articleId ? 'Edit' : 'New'}</span>`;
+
 // ── Initialize Quill ──
 const quill = new Quill('#quill-editor', {
     theme: 'snow',
@@ -196,12 +229,17 @@ function updateSEOScore() {
     const content = quill.getText().trim();
     const html = quill.root.innerHTML;
     
+    const words = content.split(/\s+/).filter(w => w.length > 0);
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const avgSentenceLen = sentences.length > 0 ? (words.length / sentences.length) : 0;
+
     let score = 0;
     const items = {
         'title-len': title.length >= 50 && title.length <= 70,
         'excerpt-len': excerpt.length >= 100 && excerpt.length <= 160,
-        'word-count': content.split(/\s+/).filter(w => w.length > 0).length >= 300,
+        'word-count': words.length >= 300,
         'img-alt': !html.includes('<img') || !html.match(/<img(?![^>]*\balt=)[^>]*>/gi),
+        'readability': avgSentenceLen > 0 && avgSentenceLen <= 22,
         'slug-check': slug.length > 0 && slug.match(/^[a-z0-9-]+$/)
     };
 
@@ -228,6 +266,19 @@ function updateSEOScore() {
     if(score < 50) bar.style.background = '#ef4444';
     else if(score < 80) bar.style.background = '#f59e0b';
     else bar.style.background = '#10b981';
+
+    // update Social Preview
+    document.getElementById('social-title-preview').textContent = title || "Article Headline...";
+    document.getElementById('social-excerpt-preview').textContent = excerpt || "The article excerpt will appear here as the meta description...";
+    const featImg = document.getElementById('featured_image').value;
+    const socialImg = document.getElementById('social-image-preview');
+    if (featImg) {
+        socialImg.style.backgroundImage = `url(${featImg})`;
+        socialImg.innerHTML = "";
+    } else {
+        socialImg.style.backgroundImage = "none";
+        socialImg.innerHTML = `<i class="ri-image-2-line" style="font-size:2rem;"></i>`;
+    }
 }
 
 // Hook events
@@ -286,6 +337,14 @@ quill.getModule('toolbar').addHandler('image', () => {
             }, 300);
             document.getElementById('featured_image').value = a.featured_image || '';
             document.getElementById('status').value = a.status || 'draft';
+            toggleSchedule(a.status);
+            if (a.published_at) {
+                const d = new Date(a.published_at);
+                if (!isNaN(d)) {
+                    const localISO = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+                    document.getElementById('published_at').value = localISO;
+                }
+            }
             document.getElementById('type').value = a.type || 'news';
             document.getElementById('is_featured').checked = !!a.is_featured;
             document.getElementById('topics').value = (a.topics || []).map(t => typeof t === 'string' ? t : t.name).join(', ');
@@ -383,7 +442,11 @@ async function checkDeadLinks(htmlContent) {
     }
 }
 
-async function submitArticle(forceStatus) {
+function toggleSchedule(v) {
+    document.getElementById('schedule-box').style.display = (v === 'scheduled') ? 'block' : 'none';
+}
+
+async function submitArticle(statusOverride) {
     const authorVal = document.getElementById('author').value;
     if (!authorVal) { showToast("Select an author", 'error'); return; }
     
@@ -415,7 +478,8 @@ async function submitArticle(forceStatus) {
         excerpt: document.getElementById('excerpt').value,
         content_html: content_html === '<p><br></p>' ? '' : content_html,
         featured_image: document.getElementById('featured_image').value || null,
-        status: forceStatus || document.getElementById('status').value,
+        status: statusOverride || document.getElementById('status').value,
+        published_at: document.getElementById('published_at').value,
         type: document.getElementById('type').value,
         topics,
         is_featured: document.getElementById('is_featured').checked
@@ -424,9 +488,14 @@ async function submitArticle(forceStatus) {
     try {
         const method = articleId ? 'PUT' : 'POST';
         const url = articleId ? ('/api/v1/admin/articles/' + articleId) : '/api/v1/admin/articles';
-        await apiCall(url, method, data);
+        const res = await apiCall(url, method, data);
         showToast(articleId ? 'Article updated!' : 'Article published!');
-        if (!articleId) setTimeout(() => { location.href = '/articles'; }, 800);
+
+        if (data.status === 'published') {
+            openShareModal(data.title, res.slug || data.slug);
+        } else {
+            if (!articleId) setTimeout(() => { location.href = '/articles'; }, 800);
+        }
     } catch(e) { showToast(e.message, 'error'); }
 }
 async function smartInterlink() {
@@ -490,5 +559,39 @@ async function suggestTopics() {
         setTimeout(() => { res.textContent = ""; }, 3000);
     } catch(e) { res.textContent = "Analysis failed."; }
 }
+// --- Auto Save Logic ---
+function autoSave() {
+    if (articleId) return; 
+    const data = {
+        title: document.getElementById('title').value,
+        excerpt: document.getElementById('excerpt').value,
+        content: quill.root.innerHTML,
+        ts: new Date().getTime()
+    };
+    localStorage.setItem('tu_article_buffer', JSON.stringify(data));
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('save-status').textContent = `Auto-saved at ${now}`;
+}
+
+function restoreBuffer() {
+    const buffer = localStorage.getItem('tu_article_buffer');
+    if (!buffer || articleId) return;
+    const data = JSON.parse(buffer);
+    if (new Date().getTime() - data.ts > 3600000) return; 
+    
+    if (confirm("You have an unsaved draft from a previous session. Would you like to restore it?")) {
+        document.getElementById('title').value = data.title;
+        document.getElementById('excerpt').value = data.excerpt;
+        quill.root.innerHTML = data.content;
+        generateSlug();
+        updateSEOScore();
+    }
+    localStorage.removeItem('tu_article_buffer');
+}
+
+setInterval(autoSave, 30000); 
+setTimeout(restoreBuffer, 500);
+
+loadArticle();
 </script>
 {% endblock %}

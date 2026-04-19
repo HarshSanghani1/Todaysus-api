@@ -74,7 +74,7 @@ def list_articles():
     page = int(request.args.get("page", 1))
     limit = int(request.args.get("limit", 10))
     skip = (page - 1) * limit
-    query = {"status": "published", "is_deleted": False}
+    query = {"status": "published", "is_deleted": False, "published_at": {"$lte": datetime.utcnow()}}
     cursor = mongo.db.articles.find(query).sort("published_at", -1).skip(skip).limit(limit)
     articles = sanitize_docs(list(cursor))
     total = mongo.db.articles.count_documents(query)
@@ -95,7 +95,8 @@ def single_article(slug):
 
 @article_bp.route("/api/v1/articles/latest")
 def latest():
-    articles = list(mongo.db.articles.find({"status": "published"}).sort("published_at", -1).limit(10))
+    query = {"status": "published", "is_deleted": False, "published_at": {"$lte": datetime.utcnow()}}
+    articles = list(mongo.db.articles.find(query).sort("published_at", -1).limit(10))
     return jsonify(sanitize_docs(articles))
 
 

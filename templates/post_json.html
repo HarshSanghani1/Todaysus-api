@@ -77,6 +77,50 @@
             <div class="card-body" id="cats-ref" style="font-size:0.78rem;color:var(--outline);">Loading...</div>
         </div>
 
+        <!-- Social Media Preview -->
+        <div class="card" id="social-card" style="display:none; border-top:3px solid var(--secondary);">
+            <div class="card-header"><h3><i class="ri-share-line"></i> Social Preview</h3></div>
+            <div class="card-body" style="padding:1rem;">
+                <!-- Mock Facebook Card -->
+                <div style="background:var(--surface-3); border-radius:8px; overflow:hidden; border:1px solid var(--surface-4); margin-bottom:1rem;">
+                    <div id="social-image-preview" style="height:140px; background:var(--surface-4) no-repeat center/cover; display:flex; align-items:center; justify-content:center; color:var(--outline);">
+                        <i class="ri-image-2-line" style="font-size:2rem;"></i>
+                    </div>
+                    <div style="padding:0.75rem;">
+                        <div style="text-transform:uppercase; font-size:0.6rem; color:var(--primary); font-weight:700; margin-bottom:0.2rem;">TODAYSUS.COM</div>
+                        <div id="social-title-preview" style="font-weight:700; font-size:0.9rem; color:var(--on-surface); line-height:1.3; margin-bottom:0.3rem;">Article Headline...</div>
+                        <div id="social-excerpt-preview" style="font-size:0.75rem; color:var(--on-surface-variant); line-height:1.4; height:2.8rem; overflow:hidden;">The article excerpt will appear here as the meta description...</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:0.5rem; justify-content:center;">
+                    <i class="ri-facebook-box-fill" style="color:var(--outline); font-size:1.1rem;"></i>
+                    <i class="ri-twitter-x-fill" style="color:var(--outline); font-size:1.1rem;"></i>
+                    <i class="ri-linkedin-box-fill" style="color:var(--outline); font-size:1.1rem;"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- SEO Insights -->
+        <div class="card" id="seo-card" style="display:none; border-top:3px solid var(--primary);">
+            <div class="card-header" style="justify-content:space-between;">
+                <h3><i class="ri-pulse-line"></i> SEO Score</h3>
+                <span id="seo-score-full" style="font-weight:800; color:var(--primary); font-size:1.1rem;">0%</span>
+            </div>
+            <div class="card-body" style="padding:1rem;">
+                <div style="height:6px; background:var(--surface-4); border-radius:10px; overflow:hidden; margin-bottom:1rem;">
+                    <div id="seo-progress-bar" style="width:0%; height:100%; background:var(--primary); transition:width 0.4s ease;"></div>
+                </div>
+                
+                <div id="seo-checklist" style="display:flex; flex-direction:column; gap:0.6rem; font-size:0.75rem;">
+                    <div class="seo-item" data-id="title-len"><i class="ri-checkbox-blank-circle-line"></i> Title Length (50-70)</div>
+                    <div class="seo-item" data-id="excerpt-len"><i class="ri-checkbox-blank-circle-line"></i> Excerpt Quality</div>
+                    <div class="seo-item" data-id="word-count"><i class="ri-checkbox-blank-circle-line"></i> Minimum 300 Words</div>
+                    <div class="seo-item" data-id="img-alt"><i class="ri-checkbox-blank-circle-line"></i> Image Alt Tags</div>
+                    <div class="seo-item" data-id="slug-check"><i class="ri-checkbox-blank-circle-line"></i> SEO Friendly Slug</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Validation Status -->
         <div class="card" id="validation-card" style="display:none;">
             <div class="card-body" id="validation-result"></div>
@@ -139,6 +183,8 @@ function loadTemplate() {
 
 function validateJson() {
     const card = document.getElementById('validation-card');
+    const seoCard = document.getElementById('seo-card');
+    const socCard = document.getElementById('social-card');
     const result = document.getElementById('validation-result');
     card.style.display = 'block';
     
@@ -152,13 +198,78 @@ function validateJson() {
         
         if (errors.length) {
             result.innerHTML = `<div style="color:var(--tertiary);font-size:0.8rem;"><i class="ri-error-warning-line"></i> ${errors.join('<br>')}</div>`;
+            seoCard.style.display = 'none';
+            socCard.style.display = 'none';
         } else {
-            result.innerHTML = `<div style="color:var(--secondary);font-size:0.8rem;"><i class="ri-check-line"></i> JSON is valid — ready to push!</div>`;
+            result.innerHTML = `<div style="color:var(--secondary);font-size:0.8rem;"><i class="ri-check-line"></i> JSON syntax is valid!</div>`;
+            seoCard.style.display = 'block';
+            socCard.style.display = 'block';
+            updateSEOScore(data);
+            updateSocialPreview(data);
         }
     } catch(e) {
         result.innerHTML = `<div style="color:var(--error);font-size:0.8rem;"><i class="ri-close-circle-line"></i> Invalid JSON: ${esc(e.message)}</div>`;
+        seoCard.style.display = 'none';
+        socCard.style.display = 'none';
     }
 }
+
+function updateSocialPreview(data) {
+    document.getElementById('social-title-preview').textContent = data.title || "Article Headline...";
+    document.getElementById('social-excerpt-preview').textContent = data.excerpt || "The article excerpt will appear here as the meta description...";
+    const featImg = data.featured_image;
+    const socialImg = document.getElementById('social-image-preview');
+    if (featImg) {
+        socialImg.style.backgroundImage = `url(${featImg})`;
+        socialImg.innerHTML = "";
+    } else {
+        socialImg.style.backgroundImage = "none";
+        socialImg.innerHTML = `<i class="ri-image-2-line" style="font-size:2rem;"></i>`;
+    }
+}
+
+function updateSEOScore(data) {
+    const title = (data.title || '').trim();
+    const excerpt = (data.excerpt || '').trim();
+    const slug = (data.slug || '').trim();
+    const html = (data.content_html || '').trim();
+    
+    // strip HTML tags for word count
+    const d = new DOMParser().parseFromString(html, 'text/html');
+    const text = d.body.textContent || "";
+    
+    const items = {
+        'title-len': title.length >= 50 && title.length <= 70,
+        'excerpt-len': excerpt.length >= 100 && excerpt.length <= 160,
+        'word-count': text.split(/\s+/).filter(w => w.length > 0).length >= 300,
+        'img-alt': !html.includes('<img') || !html.match(/<img(?![^>]*\balt=)[^>]*>/gi),
+        'slug-check': slug.length > 0 && slug.match(/^[a-z0-9-]+$/)
+    };
+
+    let passed = 0;
+    Object.keys(items).forEach(id => {
+        const el = document.querySelector(`.seo-item[data-id="${id}"]`);
+        if (items[id]) {
+            el.innerHTML = `<i class="ri-checkbox-circle-fill" style="color:var(--secondary)"></i> ${el.textContent.replace(/^.*? /, '')}`;
+            el.style.color = "var(--on-surface)";
+            passed++;
+        } else {
+            el.innerHTML = `<i class="ri-checkbox-blank-circle-line" style="opacity:0.5"></i> ${el.textContent.replace(/^.*? /, '')}`;
+            el.style.color = "var(--outline)";
+        }
+    });
+
+    const score = Math.round((passed / Object.keys(items).length) * 100);
+    const bar = document.getElementById('seo-progress-bar');
+    bar.style.width = score + '%';
+    document.getElementById('seo-score-full').textContent = score + '%';
+    
+    if(score < 50) bar.style.background = '#ef4444';
+    else if(score < 80) bar.style.background = '#f59e0b';
+    else bar.style.background = '#10b981';
+}
+
+document.getElementById('json_raw').addEventListener('input', validateJson);
 
 // Simple Levenshtein distance for string matching
 function levenshteinDistance(a, b) {
@@ -259,9 +370,14 @@ async function pushJson() {
             data.content_html = updatedHtml;
         }
 
-        await apiCall('/api/v1/admin/articles', 'POST', data);
-        showToast('Article created via JSON!');
-        setTimeout(() => { location.href = '/articles'; }, 800);
+        const res = await apiCall('/api/v1/admin/articles', 'POST', data);
+        showToast('Article published from JSON!');
+        
+        if (data.status === 'published') {
+            openShareModal(data.title, res.slug || data.slug);
+        } else {
+            setTimeout(() => { location.href = '/articles'; }, 800);
+        }
     } catch(e) {
         if (e instanceof SyntaxError) showToast('Invalid JSON syntax', 'error');
         else showToast(e.message, 'error');

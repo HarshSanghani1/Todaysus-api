@@ -475,6 +475,20 @@
         .media-item img { width: 100%; height: 100%; object-fit: cover; }
         .media-item.selected { border-color: var(--primary-container); }
 
+        /* ═══ SKELETON LOADERS ═══ */
+        .skeleton { 
+            background: linear-gradient(90deg, var(--surface-3) 25%, var(--surface-4) 50%, var(--surface-3) 75%);
+            background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 4px; 
+            display: inline-block; width: 100%; height: 1em;
+        }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        /* ═══ BREADCRUMBS ═══ */
+        .breadcrumb { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--outline); margin-bottom: 0.2rem; }
+        .breadcrumb i { font-size: 0.8rem; }
+        .breadcrumb a { color: inherit; text-decoration: none; transition: 0.2s; }
+        .breadcrumb a:hover { color: var(--primary); }
+
         /* ═══ COMMAND PALETTE ═══ */
         .cmd-palette {
             display: none; position: fixed; top: 15%; left: 50%; transform: translateX(-50%);
@@ -578,11 +592,17 @@
 
     <div class="main">
         <header class="topbar">
-            <div style="display:flex; align-items:center; gap:1rem;">
-                <button class="action-btn mobile-toggle" style="display:none;" onclick="toggleSidebar()"><i class="ri-menu-2-line" style="font-size:1.5rem;"></i></button>
-                <h1 class="topbar-title">{% block page_title %}Dashboard{% endblock %}</h1>
+            <div style="display:flex; flex-direction:column;">
+                <div class="breadcrumb" id="global-breadcrumb">
+                    <a href="/">Dashboard</a>
+                </div>
+                <div style="display:flex; align-items:center; gap:1rem;">
+                    <button class="action-btn mobile-toggle" style="display:none;" onclick="toggleSidebar()"><i class="ri-menu-2-line" style="font-size:1.5rem;"></i></button>
+                    <h1 class="topbar-title">{% block page_title %}Dashboard{% endblock %}</h1>
+                </div>
             </div>
             <div class="topbar-actions">
+                <button class="btn btn-ghost" onclick="toggleTheme()" id="theme-btn" style="padding:0.5rem; width:42px; height:42px;"><i class="ri-moon-line"></i></button>
                 {% block topbar_actions %}{% endblock %}
                 <!-- Quick Actions Dropdown -->
                 <div class="dropdown" id="quickActionsDropdown">
@@ -652,6 +672,17 @@
             document.querySelector('.sidebar').classList.toggle('mobile-active');
         }
 
+        function toggleTheme() {
+            const b = document.body;
+            b.classList.toggle('light-theme');
+            const isLight = b.classList.contains('light-theme');
+            localStorage.setItem('admin-theme', isLight ? 'light' : 'dark');
+            document.getElementById('theme-btn').innerHTML = isLight ? '<i class="ri-sun-line"></i>' : '<i class="ri-moon-line"></i>';
+        }
+
+        // Apply theme on load
+        if (localStorage.getItem('admin-theme') === 'light') { document.body.classList.add('light-theme'); }
+        
         async function apiCall(url, method = 'GET', body = null) {
             method = method || 'GET';
             const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -817,16 +848,43 @@
             if (e.key === 'Escape') cmdPalette.classList.remove('active');
         });
 
-        function filterCmd() {
+        let allArticlesCache = null;
+
+        async function filterCmd() {
             const q = cmdInput.value.toLowerCase();
-            const results = commands.filter(c => c.name.toLowerCase().includes(q));
-            document.getElementById('cmd-results').innerHTML = results.map(c => `
+            const resultsBody = document.getElementById('cmd-results');
+            
+            // 1. Static Commands
+            let results = commands.filter(c => c.name.toLowerCase().includes(q));
+            
+            let html = results.map(c => `
                 <div class="cmd-item" onclick="location.href='${c.url}'">
                     <i class="${c.icon}"></i>
                     <span>${c.name}</span>
                     <span class="cmd-shortcut">⏎</span>
                 </div>
             `).join('');
+
+            // 2. Dynamic Article Search (if query is 3+ chars)
+            if (q.length >= 3) {
+                if (!allArticlesCache) {
+                    try { allArticlesCache = await apiCall('/api/v1/admin/articles'); } catch(e){}
+                }
+                if (allArticlesCache) {
+                    const matchedArticles = allArticlesCache.filter(a => a.title.toLowerCase().includes(q)).slice(0, 5);
+                    if (matchedArticles.length) {
+                        html += `<div style="padding:0.6rem 1rem; font-size:0.65rem; color:var(--primary); font-weight:700; text-transform:uppercase; letter-spacing:0.05em; border-top:1px solid var(--surface-4); margin-top:0.4rem;">Articles</div>`;
+                        html += matchedArticles.map(a => `
+                            <div class="cmd-item" onclick="location.href='/articles/${a._id}/edit'">
+                                <i class="ri-file-text-line"></i>
+                                <span>${esc(a.title)}</span>
+                                <span class="cmd-shortcut" style="font-size:0.6rem;">Edit</span>
+                            </div>
+                        `).join('');
+                    }
+                }
+            }
+            resultsBody.innerHTML = html || '<div style="padding:2rem; text-align:center; color:var(--outline); font-size:0.85rem;">No matches found</div>';
         }
 
     </script>
@@ -841,6 +899,59 @@
             <div class="cmd-item" onclick="location.href='/analytics'"><i class="ri-line-chart-line"></i><span>View Analytics</span><span class="cmd-shortcut">⏎</span></div>
         </div>
     </div>
+    <div class="modal-overlay" id="share-modal">
+        <div class="modal" style="max-width:450px;">
+            <div class="modal-header">
+                <h3>🚀 Article Published Successfully!</h3>
+                <button class="modal-close" onclick="closeShare()">&times;</button>
+            </div>
+            <div class="modal-body" style="text-align:center; padding:2rem 1rem;">
+                <div style="font-size:3rem; margin-bottom:1rem;">🎉</div>
+                <h4 id="share-title" style="margin-bottom:0.5rem; color:var(--on-surface);">Article Title</h4>
+                <p style="font-size:0.85rem; color:var(--outline); margin-bottom:1.5rem;">Would you like to share this to your social networks now?</p>
+                
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+                    <button class="btn btn-ghost" onclick="shareTo('x')" style="background:#000; color:#fff; border:none;">
+                        <i class="ri-twitter-x-fill"></i> Share to X
+                    </button>
+                    <button class="btn btn-ghost" onclick="shareTo('fb')" style="background:#1877f2; color:#fff; border:none;">
+                        <i class="ri-facebook-box-fill"></i> Share to FB
+                    </button>
+                    <button class="btn btn-ghost" onclick="shareTo('li')" style="background:#0077b5; color:#fff; border:none;">
+                        <i class="ri-linkedin-box-fill"></i> Share to LI
+                    </button>
+                    <button class="btn btn-primary" onclick="copyArticleUrl()">
+                        <i class="ri-link"></i> Copy Link
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeShare()">Close</button>
+            </div>
+        </div>
+    </div>
+
     {% block scripts %}{% endblock %}
+    <script>
+        let currentShareData = null;
+        function openShareModal(title, slug) {
+            currentShareData = { title, url: `${window.location.origin}/articles/${slug}` };
+            document.getElementById('share-title').textContent = title;
+            document.getElementById('share-modal').classList.add('active');
+        }
+        function closeShare() { document.getElementById('share-modal').classList.remove('active'); }
+        function shareTo(p) {
+            const { title, url } = currentShareData;
+            let target = "";
+            if(p==='x') target = `https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(url)}`;
+            if(p==='fb') target = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
+            if(p==='li') target = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`;
+            window.open(target, '_blank');
+        }
+        function copyArticleUrl() {
+            navigator.clipboard.writeText(currentShareData.url);
+            showToast('Link copied to clipboard');
+        }
+    </script>
 </body>
 </html>
