@@ -2,6 +2,17 @@ from datetime import datetime
 from slugify import slugify
 import math
 
+def parse_date(date_val):
+    if not date_val:
+        return None
+    if isinstance(date_val, datetime):
+        return date_val
+    try:
+        return parser.parse(date_val)
+    except:
+        return datetime.utcnow()
+
+
 def calculate_reading_time(content_html):
     if not content_html:
         return 1
@@ -48,7 +59,8 @@ def create_article(data):
         # Dates
         # "published_at": data.get("published_at"),
         "published_at": (
-            data.get("published_at")
+            parse_date(data.get("published_at"))
+            # data.get("published_at")
             if data.get("published_at")
             else datetime.utcnow() if data.get("status") == "published"
             else None
