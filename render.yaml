@@ -1,0 +1,18 @@
+# Render Blueprint — Auto-deploys the cron job
+# Docs: https://docs.render.com/blueprint-spec
+
+services:
+  # ── Cron Job: Auto-post article every hour ────────────────────────────
+  - type: cron
+    name: todaysus-autopost
+    runtime: python
+    schedule: "0 * * * *"  # Every hour (at minute 0)
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m autoposting_agent.run_once
+    envVars:
+      - key: MONGO_URI
+        sync: false  # You'll set this in Render dashboard
+      - key: NVIDIA_API_KEY
+        sync: false  # You'll set this in Render dashboard
+      - key: PYTHON_VERSION
+        value: "3.11"
