@@ -28,7 +28,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from autoposting_agent.config import POST_INTERVAL_MINUTES
 from autoposting_agent.web_searcher import search_trending_topic
 from autoposting_agent.article_generator import generate_article
-from autoposting_agent.publisher import publish_article, is_duplicate
+from autoposting_agent.publisher import publish_article, is_duplicate, get_internal_links
 
 # ── Logging Setup ───────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -73,9 +73,19 @@ def run_pipeline():
     logger.info(f"   Topic: {search_result['title']}")
     logger.info(f"   Context: {search_result.get('snippet', '')[:100]}...")
 
-    # ── Step 2: Generate ────────────────────────────────────────────────
+    # ── Step 2: Fetch internal link candidates from DB ────────────────────
+    # We use lightweight topic slugs from the search term to seed the query.
+    # The full internal-link resolution happens inside get_internal_links().
+    seed_topics = [
+        {"name": w, "slug": w.lower().replace(" ", "-")}
+        for w in search_result.get("search_topic", "").split()
+        if len(w) > 3
+    ][:5]
+    internal_links = get_internal_links(seed_topics, limit=8)
+
+    # ── Step 3: Generate ────────────────────────────────────────────────
     logger.info("🤖 Step 2/3: Generating article via NVIDIA API...")
-    article_data = generate_article(search_result)
+    article_data = generate_article(search_result, internal_links=internal_links)
 
     if not article_data:
         logger.error("❌ Article generation failed. Skipping cycle.")
@@ -90,11 +100,14 @@ def run_pipeline():
 
     content_len = len(article_data.get("content_html", ""))
     word_count = len(article_data.get("content_html", "").split())
-    logger.info(f"   Title: {article_data['title']}")
+    logger.info(f"   Title ({len(article_data['title'])} chars): {article_data['title']}")
     logger.info(f"   Category: {article_data.get('category', {}).get('name', 'Unknown')}")
+    logger.info(f"   Structure: {article_data.get('article_structure', 'unknown')}")
+    logger.info(f"   Quality score: {article_data.get('quality_score', 0)}/10 | Featured: {article_data.get('is_featured', False)}")
+    logger.info(f"   Internal links injected: {len(internal_links)}")
     logger.info(f"   Content length: {content_len} chars, ~{word_count} words")
 
-    # ── Step 3: Publish ─────────────────────────────────────────────────
+    # ── Step 4: Publish ─────────────────────────────────────────────────
     logger.info("📤 Step 3/3: Publishing to MongoDB...")
     result = publish_article(article_data)
 
