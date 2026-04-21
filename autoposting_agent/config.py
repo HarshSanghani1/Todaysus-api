@@ -12,7 +12,7 @@ NVIDIA_MODEL = "meta/llama-3.3-70b-instruct"  # powerful, fast, free-tier friend
 MONGO_URI = os.getenv("MONGO_URI", "")
 
 # ── Scheduling ──────────────────────────────────────────────────────────────
-POST_INTERVAL_MINUTES = 60
+POST_INTERVAL_MINUTES = 30
 
 # ── Authors (alternate one-by-one) ─────────────────────────────────────
 AUTHORS = [
