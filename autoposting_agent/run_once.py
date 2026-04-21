@@ -1,13 +1,13 @@
 """
-Single-cycle runner for Render Cron Jobs.
+Single-cycle runner for GitHub Actions / Render Cron Jobs.
 
-Render calls this script on schedule → it runs ONE cycle → exits.
-No APScheduler needed — Render IS the scheduler.
+GitHub Actions / Render calls this script on schedule → runs ONE cycle → exits.
+No APScheduler needed — the scheduler IS the external cron.
 
 Usage (local test):
   python -m autoposting_agent.run_once
 
-Render Cron Command:
+GitHub Actions / Render Cron Command:
   python -m autoposting_agent.run_once
 """
 import sys
@@ -25,9 +25,9 @@ load_dotenv()  # also try root .env as fallback
 from autoposting_agent.config import NVIDIA_API_KEY
 from autoposting_agent.web_searcher import search_trending_topic
 from autoposting_agent.article_generator import generate_article
-from autoposting_agent.publisher import publish_article, is_duplicate
+from autoposting_agent.publisher import publish_article, is_duplicate, get_internal_links
 
-# ── Logging ─────────────────────────────────────────────────────────────────
+# ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s │ %(name)-35s │ %(levelname)-5s │ %(message)s",
@@ -40,17 +40,17 @@ logger = logging.getLogger("autoposting_agent")
 def run_once():
     """Execute a single search → generate → publish cycle, then exit."""
     logger.info("=" * 60)
-    logger.info(f"🤖 TodaysUS AutoPosting Agent — Single Run")
+    logger.info("🤖 TodaysUS AutoPosting Agent — Single Run")
     logger.info(f"🕐 {datetime.utcnow().isoformat()}Z")
     logger.info("=" * 60)
 
     # Verify API key
     if not NVIDIA_API_KEY:
-        logger.error("❌ NVIDIA_API_KEY not set! Add it to Render env vars.")
+        logger.error("❌ NVIDIA_API_KEY not set! Add it to GitHub / Render env vars.")
         sys.exit(1)
 
-    # Step 1: Search
-    logger.info("📡 Step 1/3: Searching for trending topics...")
+    # ── Step 1: Search ───────────────────────────────────────────────────────
+    logger.info("📡 Step 1/4: Searching for trending topics...")
     search_result = search_trending_topic()
 
     if not search_result or not search_result.get("title"):
@@ -59,9 +59,19 @@ def run_once():
 
     logger.info(f"   → {search_result['title']}")
 
-    # Step 2: Generate
-    logger.info("🤖 Step 2/3: Generating article via NVIDIA API...")
-    article_data = generate_article(search_result)
+    # ── Step 2: Fetch internal link candidates from DB ───────────────────────
+    logger.info("🔗 Step 2/4: Fetching internal link candidates from DB...")
+    seed_topics = [
+        {"name": w, "slug": w.lower().replace(" ", "-")}
+        for w in search_result.get("search_topic", "").split()
+        if len(w) > 3
+    ][:5]
+    internal_links = get_internal_links(seed_topics, limit=8)
+    logger.info(f"   → {len(internal_links)} internal link(s) found")
+
+    # ── Step 3: Generate ─────────────────────────────────────────────────────
+    logger.info("🤖 Step 3/4: Generating article via NVIDIA API...")
+    article_data = generate_article(search_result, internal_links=internal_links)
 
     if not article_data:
         logger.error("❌ Generation failed. Exiting.")
@@ -73,14 +83,22 @@ def run_once():
         sys.exit(0)
 
     word_count = len(article_data.get("content_html", "").split())
-    logger.info(f"   → {article_data['title']} (~{word_count} words)")
+    title = article_data["title"]
+    quality = article_data.get("quality_score", 0)
+    featured = article_data.get("is_featured", False)
+    structure = article_data.get("article_structure", "unknown")
 
-    # Step 3: Publish
-    logger.info("📤 Step 3/3: Publishing to MongoDB...")
+    logger.info(f"   → Title ({len(title)} chars): {title}")
+    logger.info(f"   → Structure: {structure} | Quality: {quality}/10 | Featured: {featured}")
+    logger.info(f"   → ~{word_count} words")
+
+    # ── Step 4: Publish ──────────────────────────────────────────────────────
+    logger.info("📤 Step 4/4: Publishing to MongoDB...")
     result = publish_article(article_data)
 
     if result:
-        logger.info(f"🎉 SUCCESS! Published: {result['slug']}")
+        tag = "⭐ FEATURED " if featured else ""
+        logger.info(f"🎉 SUCCESS! {tag}Published: {result['slug']}")
         sys.exit(0)
     else:
         logger.error("❌ Publish failed.")

@@ -2,8 +2,11 @@ name: TodaysUS AutoPosting Agent
 
 on:
   schedule:
-    # Run every hour at minute 0
-    - cron: '0 * * * *'
+    # Run every 30 minutes
+    - cron: '0,30 * * * *'
+  push:
+    branches:
+      - main   # fires once when you push — lets you verify new code immediately
   workflow_dispatch:
     # Allows you to trigger the workflow manually from the Actions tab
 
