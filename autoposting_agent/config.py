@@ -75,14 +75,32 @@ SEARCH_TOPICS = [
     "US military Pentagon defense news today",
     "US foreign policy diplomacy news today",
 
-    # ─── US Tech & Science ───
-    "US artificial intelligence AI regulation news today",
-    "US space NASA SpaceX news today",
-    "US cryptocurrency regulation news today",
+    # ─── US Tech & Science (Expanded) ───
+    "latest artificial intelligence AI breakthroughs news today",
+    "US semiconductor chip manufacturing news today",
+    "next generation battery technology electric vehicles news",
+    "solid state battery research breakthrough news",
+    "lithium ion battery market trends US news",
+    "renewable energy storage battery systems news",
+    "US space exploration NASA SLS Artemis news today",
+    "SpaceX Starship launch news today",
+    "quantum computing research progress news",
+    "cybersecurity threats US infrastructure news today",
+    "Apple iPhone Mac rumor news today",
+    "Google Alphabet AI development news today",
+    "Microsoft OpenAI partnership news today",
+    "Tesla FSD electric cars news today",
+
+    # ─── Current Trending Topics (Dynamic context) ───
+    "breaking news US today live updates",
+    "top trending news stories United States today",
+    "viral news stories US today",
+    "major policy announcements Washington DC today",
 
     # ─── World (US impact angle) ───
     "world news affecting United States today",
     "US China trade relations news today",
     "US NATO Europe alliance news today",
     "Middle East conflict US involvement news today",
+    "global supply chain disruptions news today",
 ]
