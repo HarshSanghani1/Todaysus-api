@@ -10,6 +10,7 @@ NVIDIA_MODEL = "meta/llama-3.3-70b-instruct"  # powerful, fast, free-tier friend
 
 # ── MongoDB ─────────────────────────────────────────────────────────────────
 MONGO_URI = os.getenv("MONGO_URI", "")
+SITE_BASE_URL = os.getenv("SITE_BASE_URL", "https://todaysus.com").rstrip("/")
 
 # ── Scheduling ──────────────────────────────────────────────────────────────
 POST_INTERVAL_MINUTES = 30

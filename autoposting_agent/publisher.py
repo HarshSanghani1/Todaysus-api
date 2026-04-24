@@ -17,6 +17,7 @@ from pymongo import MongoClient
 from slugify import slugify
 
 from autoposting_agent.config import MONGO_URI, AUTHORS
+from utils.seo import build_canonical_url, build_news_article_schema, get_site_base_url
 
 logger = logging.getLogger("autoposting_agent.publisher")
 
@@ -24,7 +25,7 @@ logger = logging.getLogger("autoposting_agent.publisher")
 _client = None
 _db = None
 
-SITE_BASE_URL = os.getenv("SITE_BASE_URL", "https://todaysus.com")
+SITE_BASE_URL = get_site_base_url()
 
 
 def _get_db():
@@ -150,6 +151,7 @@ def publish_article(article_data: dict) -> dict | None:
             return None
 
         content_html = article_data.get("content_html", "")
+        now = datetime.utcnow()
 
         # Determine featured status — trust the generator's decision
         is_featured = bool(article_data.get("is_featured", False))
@@ -194,9 +196,9 @@ def publish_article(article_data: dict) -> dict | None:
             "reading_time": _calculate_reading_time(content_html),
 
             # Dates
-            "published_at": datetime.utcnow(),
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "published_at": now,
+            "created_at": now,
+            "updated_at": now,
 
             # Soft delete
             "is_deleted": False,
@@ -206,6 +208,12 @@ def publish_article(article_data: dict) -> dict | None:
             "quality_score": quality_score,
             "article_structure": article_data.get("article_structure", ""),
         }
+
+        article["canonical_url"] = article_data.get("canonical_url") or build_canonical_url(article)
+        article["structured_data"] = article_data.get("structured_data") or build_news_article_schema(
+            article,
+            article["canonical_url"],
+        )
 
         result = db.articles.insert_one(article)
         featured_tag = "⭐ FEATURED" if is_featured else ""

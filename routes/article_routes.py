@@ -5,6 +5,7 @@ from db.mongo import mongo
 from models.article_model import create_article
 from utils.helper import sync_topics
 from utils.sanitize import sanitize_doc, sanitize_docs
+from utils.seo import enrich_article_seo
 
 article_bp = Blueprint("articles", __name__)
 
@@ -56,6 +57,7 @@ def admin_list():
         query["status"] = status
     projection = {"content_html": 0} if request.args.get("full") != "true" else None
     articles = list(mongo.db.articles.find(query, projection).sort("created_at", -1))
+    articles = [enrich_article_seo(article) for article in articles]
     return jsonify(sanitize_docs(articles))
 
 
@@ -64,6 +66,7 @@ def admin_get(id):
     article = mongo.db.articles.find_one({"_id": ObjectId(id), "is_deleted": False})
     if not article:
         return jsonify({"error": "Not found"}), 404
+    article = enrich_article_seo(article)
     return jsonify(sanitize_doc(article))
 
 
@@ -76,9 +79,9 @@ def list_articles():
     skip = (page - 1) * limit
     query = {"status": "published", "is_deleted": False, "published_at": {"$lte": datetime.utcnow()}}
     cursor = mongo.db.articles.find(query).sort("published_at", -1).skip(skip).limit(limit)
-    articles = sanitize_docs(list(cursor))
+    articles = [enrich_article_seo(article) for article in list(cursor)]
     total = mongo.db.articles.count_documents(query)
-    return jsonify({"data": articles, "page": page, "limit": limit, "total": total})
+    return jsonify({"data": sanitize_docs(articles), "page": page, "limit": limit, "total": total})
 
 
 @article_bp.route("/api/v1/articles/<slug>", methods=["GET"])
@@ -90,6 +93,7 @@ def single_article(slug):
     )
     if not article:
         return jsonify({"error": "Not found"}), 404
+    article = enrich_article_seo(article)
     return jsonify(sanitize_doc(article))
 
 
@@ -97,6 +101,7 @@ def single_article(slug):
 def latest():
     query = {"status": "published", "is_deleted": False, "published_at": {"$lte": datetime.utcnow()}}
     articles = list(mongo.db.articles.find(query).sort("published_at", -1).limit(10))
+    articles = [enrich_article_seo(article) for article in articles]
     return jsonify(sanitize_docs(articles))
 
 
@@ -105,4 +110,5 @@ def most_read():
     articles = list(mongo.db.articles.find(
         {"status": "published", "is_deleted": False}
     ).sort("view_count", -1).limit(10))
+    articles = [enrich_article_seo(article) for article in articles]
     return jsonify(sanitize_docs(articles))

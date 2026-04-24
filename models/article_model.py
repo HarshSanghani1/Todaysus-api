@@ -2,6 +2,7 @@ from datetime import datetime
 from dateutil import parser
 from slugify import slugify
 import math
+from utils.seo import build_canonical_url, build_news_article_schema
 
 def parse_date(date_val):
     if not date_val:
@@ -23,8 +24,15 @@ def calculate_reading_time(content_html):
 
 def create_article(data):
     content = data.get("content_html", "")
+    now = datetime.utcnow()
+    published_at = (
+        parse_date(data.get("published_at"))
+        if data.get("published_at")
+        else now if data.get("status") == "published"
+        else None
+    )
 
-    return {
+    article = {
         "title": data["title"],
         "slug": slugify(data["title"]),
 
@@ -58,17 +66,17 @@ def create_article(data):
         "reading_time": calculate_reading_time(content),
 
         # Dates
-        # "published_at": data.get("published_at"),
-        "published_at": (
-            parse_date(data.get("published_at"))
-            # data.get("published_at")
-            if data.get("published_at")
-            else datetime.utcnow() if data.get("status") == "published"
-            else None
-        ),
+        "published_at": published_at,
 
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": now,
+        "updated_at": now,
 
         "is_deleted": False
     }
+
+    article["canonical_url"] = data.get("canonical_url") or build_canonical_url(article)
+    article["structured_data"] = data.get("structured_data") or build_news_article_schema(
+        article,
+        article["canonical_url"],
+    )
+    return article

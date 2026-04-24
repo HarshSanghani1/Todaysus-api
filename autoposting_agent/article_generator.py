@@ -24,7 +24,7 @@ from autoposting_agent.config import (
 logger = logging.getLogger("autoposting_agent.generator")
 
 MAX_RETRIES = 2
-TIMEOUT_SECONDS = 300
+TIMEOUT_SECONDS = 600
 MIN_PUBLISH_WORDS = 700
 TARGET_WORDS = "800-1000"
 EXPANSION_TARGET_WORDS = 900
@@ -51,6 +51,7 @@ SEO OPTIMIZATION STRATEGY:
 2. LSI & SEMANTIC CLUSTERS: Use related terms and synonyms naturally. For a story on "Economy," use terms like "fiscal policy," "GDP growth," "inflationary pressure," and "market volatility" where relevant.
 3. READABILITY SCORE: Use active voice. Keep paragraphs to 3-4 sentences maximum. Use whitespace strategically.
 4. INTERNAL LINKING: Use <a href="URL"><u>Anchor Text</u></a>. Weave 3-5 internal links naturally where they add context.
+5. CTR WRITING: Titles and meta descriptions must make a reader choose TodaysUS over competing results. Lead with the news hook, named entity, consequence, or unresolved question. Avoid generic titles like "A Comprehensive Analysis," "Latest Updates," or "[Topic]: What You Need to Know" unless the angle is highly specific.
 
 PRO-GRADE HTML STRUCTURE:
 1. HEADLINE (h2): Broad, keyword-rich, and compelling (55-70 chars).
@@ -172,8 +173,17 @@ INSTRUCTIONS FOR SUCCESS:
 10. FORMAT: Use only valid article-body HTML inside content_html.
 
 TITLE RULES:
-- 55-70 characters.
-- Must be a power headline: high-impact, specific, and complete.
+- 50-68 characters, written for a U.S. search audience.
+- Must be specific, curiosity-building, and complete.
+- Include a named entity, concrete action, number, location, or consequence when possible.
+- Avoid low-CTR filler: "Comprehensive Analysis," "Latest Updates," "Breaking News," "Deep Dive," and vague "What You Need to Know" headlines.
+- Good pattern examples: "[Entity] Faces [Consequence] as [Event] Escalates" or "[Policy/Event] Could Hit [Audience] After [Trigger]."
+
+META DESCRIPTION RULES:
+- 140-158 characters.
+- Start with the main keyword or named entity.
+- Include the direct reader benefit: why it matters, who is affected, or what changes next.
+- Do not duplicate the title. Do not end with generic phrasing.
 
 FEATURED SCORING:
 - 1-10 scale.
@@ -185,8 +195,8 @@ JSON OUTPUT (VALID JSON ONLY; DO NOT OUTPUT RAW HTML OUTSIDE THIS OBJECT):
     "title": "SEO-Optimized 55-70 char headline",
     "excerpt": "Keyword-rich 150-200 char summary",
     "content_html": "<h2>[Title]</h2><h3>The Big Picture: Key Points</h3><ul><li>[Point1]</li>...</ul><p>[Lead]...</p><h3>[Keyword-Rich Subhead]</h3>...<blockquote>[Impactful attributed analysis]</blockquote>...<h3>FAQ</h3>...<h3>Related News</h3>",
-    "seo_title": "[Primary Keyword] | [Secondary Keyword] | TodaysUS",
-    "seo_description": "Compelling meta description with main keyword in the first 10 words.",
+    "seo_title": "CTR-focused search title, 50-68 chars, no filler",
+    "seo_description": "140-158 char meta description with keyword, consequence, and reader benefit.",
     "category_slug": "politics, business, technology, etc.",
     "topics": ["entity1", "entity2", "entity3"],
     "type": "{article_type}",
@@ -715,6 +725,15 @@ def _finalize_article(article_data: dict, structure_name: str, word_count: int) 
         title = title[:77].rsplit(" ", 1)[0] + "..."
         article_data["title"] = title
 
+    article_data["seo_title"] = _optimize_seo_title(
+        article_data.get("seo_title") or title,
+        title,
+    )
+    article_data["seo_description"] = _optimize_meta_description(
+        article_data.get("seo_description") or article_data.get("excerpt") or "",
+        article_data.get("excerpt") or _visible_text(article_data.get("content_html", "")),
+    )
+
     cat_slug = article_data.get("category_slug", "world")
     category = next((c for c in CATEGORIES if c["slug"] == cat_slug), CATEGORIES[2])
     article_data["category"] = category
@@ -737,6 +756,44 @@ def _finalize_article(article_data: dict, structure_name: str, word_count: int) 
         word_count,
     )
     return article_data
+
+
+def _optimize_seo_title(seo_title: str, fallback_title: str) -> str:
+    title = re.sub(r"\s+", " ", seo_title or fallback_title).strip()
+    title = re.sub(r"\s*\|\s*TodaysUS\s*$", "", title, flags=re.IGNORECASE).strip()
+
+    filler_patterns = [
+        r"\bA Comprehensive Analysis\b",
+        r"\bComprehensive Analysis\b",
+        r"\bLatest Updates?\b",
+        r"\bBreaking News:\s*",
+        r"\bDeep Dive\b",
+        r"\bWhat You Need to Know\b",
+    ]
+    for pattern in filler_patterns:
+        title = re.sub(pattern, "", title, flags=re.IGNORECASE).strip(" :-|")
+
+    if len(title) < 35:
+        title = fallback_title
+
+    if len(title) > 68:
+        title = title[:68].rsplit(" ", 1)[0].strip(" ,:-")
+
+    return title
+
+
+def _optimize_meta_description(meta_description: str, fallback_text: str) -> str:
+    description = re.sub(r"\s+", " ", meta_description or fallback_text).strip()
+    description = re.sub(r"\bIn this article,?\s*", "", description, flags=re.IGNORECASE)
+    description = re.sub(r"\bThis article explores\s*", "", description, flags=re.IGNORECASE)
+
+    if len(description) < 90:
+        description = re.sub(r"\s+", " ", fallback_text or description).strip()
+
+    if len(description) > 158:
+        description = description[:155].rsplit(" ", 1)[0].rstrip(" ,;:") + "..."
+
+    return description
 
 
 def _safe_int(value) -> int:

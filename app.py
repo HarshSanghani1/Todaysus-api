@@ -3,6 +3,7 @@ load_dotenv()
 
 import os
 from datetime import datetime
+from urllib.parse import urlparse
 from bson import ObjectId
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from flask.json.provider import DefaultJSONProvider
@@ -39,6 +40,12 @@ mongo.init_app(app)
 
 @app.before_request
 def check_auth():
+    canonical_site = urlparse(app.config.get("SITE_BASE_URL", "https://todaysus.com"))
+    canonical_host = canonical_site.netloc
+    if canonical_host and request.host in {"todaysus.com", "www.todaysus.com"} and request.host != canonical_host:
+        canonical_scheme = canonical_site.scheme or "https"
+        return redirect(f"{canonical_scheme}://{canonical_host}{request.full_path}".rstrip("?"), code=301)
+
     # Allow static files, login route, and Bing verification key
     if request.endpoint in ("login", "static", "auth.login", "bing_indexing_key"):
         return
