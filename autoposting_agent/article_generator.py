@@ -29,6 +29,10 @@ MIN_PUBLISH_WORDS = 700
 TARGET_WORDS = "800-1000"
 EXPANSION_TARGET_WORDS = 900
 LLM_JSON_MAX_TOKENS = 6144
+ARTICLE_TAG_RE = re.compile(r"<(?:h1|h2|h3|p|ul|ol|blockquote)\b", re.IGNORECASE)
+JSON_METADATA_TAIL_RE = re.compile(
+    r'(?s)(?:["\']?\s*,\s*)?"(?:seo_title|seo_description|category_slug|topics|type|quality_score|is_featured)"\s*:'
+)
 
 SYSTEM_PROMPT = """You are a senior investigative journalist, SEO strategist, and veteran editor at TodaysUS. Your mission is to produce authoritative, high-ranking content that dominates Google Search results through superior quality and technical SEO optimization.
 
@@ -278,6 +282,7 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
     if not _has_required_fields(article_data):
         return None
 
+    article_data = _sanitize_article_data(article_data)
     article_data.setdefault("type", article_type)
     word_count = _word_count_from_html(article_data.get("content_html", ""))
     logger.info("Draft word count: %s", word_count)
@@ -289,6 +294,7 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
             word_count=word_count,
         )
         if _has_required_fields(expanded):
+            expanded = _sanitize_article_data(expanded)
             expanded_count = _word_count_from_html(expanded.get("content_html", ""))
             if expanded_count > word_count:
                 logger.info("Expanded article from %s to %s words.", word_count, expanded_count)
@@ -301,6 +307,7 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
     if polish_reasons:
         polished = _polish_article(article_data, polish_reasons)
         if _has_required_fields(polished):
+            polished = _sanitize_article_data(polished)
             polished_count = _word_count_from_html(polished.get("content_html", ""))
             if polished_count >= word_count:
                 logger.info("Polished article for SEO requirements: %s", ", ".join(polish_reasons))
@@ -309,6 +316,7 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
             else:
                 logger.warning("Polish result was shorter; keeping expanded draft.")
 
+    article_data = _sanitize_article_data(article_data)
     final_word_count = _word_count_from_html(article_data.get("content_html", ""))
     if final_word_count < MIN_PUBLISH_WORDS:
         logger.error(
@@ -511,10 +519,9 @@ def _coerce_html_article(raw_content: str) -> dict | None:
     outer JSON contract. Wrap that raw HTML so the pipeline can still validate,
     expand, polish, and publish it safely.
     """
-    content_html = re.sub(r"^```(?:html)?\s*\n?", "", (raw_content or "").strip())
-    content_html = re.sub(r"\n?```\s*$", "", content_html).strip()
+    content_html = _sanitize_content_html(raw_content)
 
-    if not re.search(r"<(?:h2|h3|p|ul|ol|blockquote)\b", content_html, re.IGNORECASE):
+    if not ARTICLE_TAG_RE.search(content_html):
         return None
 
     title = _extract_heading_text(content_html, "h2") or _extract_heading_text(content_html, "h1")
@@ -536,6 +543,42 @@ def _coerce_html_article(raw_content: str) -> dict | None:
         "quality_score": 7,
         "is_featured": False,
     }
+
+
+def _sanitize_article_data(article_data: dict) -> dict:
+    article_data["content_html"] = _sanitize_content_html(
+        article_data.get("content_html", "")
+    )
+    return article_data
+
+
+def _sanitize_content_html(content_html: str) -> str:
+    """
+    Keep only article-body HTML. This removes malformed JSON wrappers/tails
+    that can appear when the model mixes JSON metadata into content_html.
+    """
+    cleaned = re.sub(r"^```(?:html|json)?\s*\n?", "", (content_html or "").strip())
+    cleaned = re.sub(r"\n?```\s*$", "", cleaned).strip()
+
+    first_tag = ARTICLE_TAG_RE.search(cleaned)
+    if first_tag:
+        cleaned = cleaned[first_tag.start():]
+
+    metadata_tail = JSON_METADATA_TAIL_RE.search(cleaned)
+    if metadata_tail:
+        logger.warning("Removed leaked JSON metadata from article body.")
+        cleaned = cleaned[:metadata_tail.start()]
+
+    cleaned = (
+        cleaned.replace("\\n", "\n")
+        .replace("\\r", "\n")
+        .replace("\\t", " ")
+        .replace('\\"', '"')
+        .replace("\\/", "/")
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    return cleaned.strip(' "')
 
 
 def _extract_heading_text(content_html: str, tag: str) -> str:
@@ -660,6 +703,9 @@ def _has_required_fields(article_data: dict | None) -> bool:
 
 
 def _finalize_article(article_data: dict, structure_name: str, word_count: int) -> dict:
+    article_data = _sanitize_article_data(article_data)
+    word_count = _word_count_from_html(article_data.get("content_html", ""))
+
     title = article_data["title"].strip()
     if len(title) < 40:
         logger.warning("Title too short (%s chars): '%s' - padding", len(title), title)
