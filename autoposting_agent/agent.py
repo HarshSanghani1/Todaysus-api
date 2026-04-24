@@ -27,7 +27,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 from autoposting_agent.config import POST_INTERVAL_MINUTES
 from autoposting_agent.web_searcher import search_trending_topic
-from autoposting_agent.article_generator import generate_article
+from autoposting_agent.article_generator import MIN_PUBLISH_WORDS, generate_article
 from autoposting_agent.publisher import publish_article, is_duplicate, get_internal_links
 
 # ── Logging Setup ───────────────────────────────────────────────────────────
@@ -92,6 +92,19 @@ def run_pipeline():
         _stats["failed"] += 1
         return
 
+    word_count = int(
+        article_data.get("word_count")
+        or len(article_data.get("content_html", "").split())
+    )
+    if word_count < MIN_PUBLISH_WORDS:
+        logger.error(
+            "❌ Article below publishable length (%s words; minimum %s). Skipping cycle.",
+            word_count,
+            MIN_PUBLISH_WORDS,
+        )
+        _stats["failed"] += 1
+        return
+
     # Quick duplicate check before publish
     if is_duplicate(article_data["title"]):
         logger.warning(f"⚠️  Duplicate detected pre-publish: {article_data['title']}")
@@ -99,7 +112,6 @@ def run_pipeline():
         return
 
     content_len = len(article_data.get("content_html", ""))
-    word_count = len(article_data.get("content_html", "").split())
     logger.info(f"   Title ({len(article_data['title'])} chars): {article_data['title']}")
     logger.info(f"   Category: {article_data.get('category', {}).get('name', 'Unknown')}")
     logger.info(f"   Structure: {article_data.get('article_structure', 'unknown')}")

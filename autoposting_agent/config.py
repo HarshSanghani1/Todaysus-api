@@ -42,6 +42,16 @@ CATEGORIES = [
 # ── Article types ──────────────────────────────────────────────────────────
 ARTICLE_TYPES = ["news", "analysis", "explainer", "updates"]
 
+# Freshness modifiers appended by the autoposting searcher. Keep these
+# time-sensitive so every run is biased toward the current news cycle.
+HOURLY_FOCUSED_KEYWORDS = [
+    "latest",
+    "breaking",
+    "live updates",
+    "last hour",
+    "last 24 hours",
+]
+
 # ── Search topics to rotate through (US-focused, audience is American) ─────
 SEARCH_TOPICS = [
     # ─── US Politics & Government (core) ───
@@ -92,10 +102,10 @@ SEARCH_TOPICS = [
     "Tesla FSD electric cars news today",
 
     # ─── Current Trending Topics (Dynamic context) ───
-    "breaking news US today live updates",
-    "top trending news stories United States today",
-    "viral news stories US today",
-    "major policy announcements Washington DC today",
+    "breaking news US today live updates last hour",
+    "top trending news stories United States today last hour",
+    "viral news stories US today last 24 hours",
+    "major policy announcements Washington DC today live updates",
 
     # ─── World (US impact angle) ───
     "world news affecting United States today",

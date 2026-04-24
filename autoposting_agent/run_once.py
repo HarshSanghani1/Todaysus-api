@@ -24,7 +24,7 @@ load_dotenv()  # also try root .env as fallback
 
 from autoposting_agent.config import NVIDIA_API_KEY
 from autoposting_agent.web_searcher import search_trending_topic
-from autoposting_agent.article_generator import generate_article
+from autoposting_agent.article_generator import MIN_PUBLISH_WORDS, generate_article
 from autoposting_agent.publisher import publish_article, is_duplicate, get_internal_links
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -77,12 +77,23 @@ def run_once():
         logger.error("❌ Generation failed. Exiting.")
         sys.exit(1)
 
+    word_count = int(
+        article_data.get("word_count")
+        or len(article_data.get("content_html", "").split())
+    )
+    if word_count < MIN_PUBLISH_WORDS:
+        logger.error(
+            "❌ Article below publishable length (%s words; minimum %s). Exiting.",
+            word_count,
+            MIN_PUBLISH_WORDS,
+        )
+        sys.exit(1)
+
     # Duplicate check
     if is_duplicate(article_data["title"]):
         logger.warning(f"⚠️  Duplicate: {article_data['title']}. Skipping.")
         sys.exit(0)
 
-    word_count = len(article_data.get("content_html", "").split())
     title = article_data["title"]
     quality = article_data.get("quality_score", 0)
     featured = article_data.get("is_featured", False)
