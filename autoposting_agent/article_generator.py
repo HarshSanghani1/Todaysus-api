@@ -32,6 +32,9 @@ LLM_JSON_MAX_TOKENS = 6144
 
 SYSTEM_PROMPT = """You are a senior investigative journalist, SEO strategist, and veteran editor at TodaysUS. Your mission is to produce authoritative, high-ranking content that dominates Google Search results through superior quality and technical SEO optimization.
 
+ABSOLUTE OUTPUT CONTRACT:
+Return one valid JSON object only. Never return raw HTML outside JSON. The full article body must be inside the "content_html" JSON string.
+
 JOURNALISTIC EXCELLENCE & EEAT (Experience, Expertise, Authoritativeness, Trustworthiness):
 1. AUTHORITATIVE TONE: Write as a subject matter expert. Avoid "I think" or "This might." Use "The data confirms," "Strategic shifts indicate," or "industry analysts are watching."
 2. ENTITY-BASED SEO: Focus heavily on entities: specific people, organizations, locations, agencies, companies, laws, and events.
@@ -145,6 +148,8 @@ Main Topic: {title}
 Contextual Snippet: {snippet}
 Search Category: {search_topic}
 Source Freshness: {freshness}
+Current UTC Date: {utc_date}
+Search Timestamp UTC: {timestamp_utc}
 Requested Tone: Authoritative Journalist / SEO Strategist
 Article Structure: {structure_name}
 
@@ -171,7 +176,7 @@ FEATURED SCORING:
 - Criteria: journalistic authority, SEO keyword integration, entity connection, narrative flow, and article completeness.
 - score >= 8 -> "is_featured": true.
 
-JSON OUTPUT (VALID JSON ONLY):
+JSON OUTPUT (VALID JSON ONLY; DO NOT OUTPUT RAW HTML OUTSIDE THIS OBJECT):
 {{
     "title": "SEO-Optimized 55-70 char headline",
     "excerpt": "Keyword-rich 150-200 char summary",
@@ -202,6 +207,8 @@ Original source topic:
 Main Topic: {title}
 Contextual Snippet: {snippet}
 Search Category: {search_topic}
+Current UTC Date: {utc_date}
+Search Timestamp UTC: {timestamp_utc}
 Current Word Count: {word_count}
 
 Draft JSON:
@@ -248,6 +255,8 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
         snippet=search_result.get("snippet", ""),
         search_topic=search_result.get("search_topic", ""),
         freshness=search_result.get("freshness", "fresh search result"),
+        utc_date=search_result.get("utc_date", ""),
+        timestamp_utc=search_result.get("timestamp_utc", ""),
         structure_name=structure_name.replace("_", " ").title(),
         structure_instructions=structure_instructions,
         article_type=article_type,
@@ -374,6 +383,14 @@ def _request_article_json(
     try:
         return _parse_json_payload(raw_content)
     except json.JSONDecodeError as e:
+        html_article = _coerce_html_article(raw_content)
+        if html_article:
+            logger.warning(
+                "NVIDIA returned raw HTML during %s; wrapped it into article JSON.",
+                purpose,
+            )
+            return html_article
+
         logger.error("JSON parse error during %s: %s", purpose, e)
         logger.error("Raw content (first 800 chars): %s", raw_content[:800])
         return None
@@ -438,6 +455,8 @@ def _expand_article(article_data: dict, search_result: dict, word_count: int) ->
         title=search_result.get("title", ""),
         snippet=search_result.get("snippet", ""),
         search_topic=search_result.get("search_topic", ""),
+        utc_date=search_result.get("utc_date", ""),
+        timestamp_utc=search_result.get("timestamp_utc", ""),
         word_count=word_count,
         draft_json=json.dumps(article_data, ensure_ascii=False),
     )
@@ -484,6 +503,124 @@ def _parse_json_payload(content: str) -> dict:
         return json.loads(content)
     except json.JSONDecodeError:
         return json.loads(content, strict=False)
+
+
+def _coerce_html_article(raw_content: str) -> dict | None:
+    """
+    NVIDIA sometimes follows the article HTML instructions but ignores the
+    outer JSON contract. Wrap that raw HTML so the pipeline can still validate,
+    expand, polish, and publish it safely.
+    """
+    content_html = re.sub(r"^```(?:html)?\s*\n?", "", (raw_content or "").strip())
+    content_html = re.sub(r"\n?```\s*$", "", content_html).strip()
+
+    if not re.search(r"<(?:h2|h3|p|ul|ol|blockquote)\b", content_html, re.IGNORECASE):
+        return None
+
+    title = _extract_heading_text(content_html, "h2") or _extract_heading_text(content_html, "h1")
+    visible_text = _visible_text(content_html)
+    if not title:
+        title = visible_text[:70].rsplit(" ", 1)[0] if visible_text else "TodaysUS News Update"
+
+    excerpt = _truncate_text(visible_text, 200)
+    seo_description = _truncate_text(visible_text, 155)
+
+    return {
+        "title": title,
+        "excerpt": excerpt,
+        "content_html": content_html,
+        "seo_title": f"{title} | TodaysUS",
+        "seo_description": seo_description,
+        "category_slug": _infer_category_slug(f"{title} {visible_text}"),
+        "topics": _extract_topics_from_text(f"{title} {visible_text}"),
+        "quality_score": 7,
+        "is_featured": False,
+    }
+
+
+def _extract_heading_text(content_html: str, tag: str) -> str:
+    match = re.search(
+        rf"<{tag}[^>]*>(.*?)</{tag}>",
+        content_html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    return _visible_text(match.group(1)) if match else ""
+
+
+def _visible_text(content_html: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", content_html or "")
+    text = html.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _truncate_text(text: str, max_chars: int) -> str:
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 3].rsplit(" ", 1)[0] + "..."
+
+
+def _infer_category_slug(text: str) -> str:
+    lower = text.lower()
+    category_keywords = [
+        ("politics", ["white house", "congress", "senate", "election", "policy", "law", "court", "immigration"]),
+        ("business", ["market", "stocks", "economy", "inflation", "jobs", "federal reserve", "battery", "trade", "company"]),
+        ("technology", ["technology", "ai", "software", "cybersecurity", "semiconductor", "spacex", "nasa", "tesla"]),
+        ("sports", ["nfl", "nba", "mlb", "football", "basketball", "baseball", "sports"]),
+        ("opinion", ["analysis", "opinion", "editorial"]),
+        ("world", ["china", "nato", "europe", "middle east", "global", "foreign policy"]),
+    ]
+    for slug, keywords in category_keywords:
+        if any(keyword in lower for keyword in keywords):
+            return slug
+    return "news"
+
+
+def _extract_topics_from_text(text: str) -> list[str]:
+    stop_phrases = {
+        "The",
+        "A",
+        "An",
+        "FAQ",
+        "Related News",
+        "Key Points",
+        "The Big Picture",
+        "TodaysUS",
+    }
+    topics = []
+
+    for phrase in re.findall(r"\b[A-Z][A-Za-z0-9&.-]*(?:\s+[A-Z][A-Za-z0-9&.-]*){0,3}\b", text):
+        cleaned = phrase.strip(" .,:;()-")
+        if len(cleaned) < 3 or cleaned in stop_phrases:
+            continue
+        if cleaned not in topics:
+            topics.append(cleaned)
+        if len(topics) >= 5:
+            break
+
+    if topics:
+        return topics
+
+    keyword_stop = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "news",
+        "today",
+        "latest",
+        "breaking",
+        "updates",
+        "analysis",
+    }
+    fallback = []
+    for word in re.findall(r"\b[a-zA-Z][a-zA-Z-]{3,}\b", text.lower()):
+        if word in keyword_stop or word in fallback:
+            continue
+        fallback.append(word.title())
+        if len(fallback) >= 5:
+            break
+    return fallback or ["US News"]
 
 
 def _fix_control_chars(s: str) -> str:

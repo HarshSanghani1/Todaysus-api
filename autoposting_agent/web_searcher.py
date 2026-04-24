@@ -47,9 +47,10 @@ def search_trending_topic() -> dict:
     with the best headline + snippet for article generation.
     """
     topic = random.choice(SEARCH_TOPICS)
-    fresh_query = _build_fresh_query(topic)
     utc_now = datetime.datetime.now(datetime.timezone.utc)
     utc_now_iso = utc_now.isoformat()
+    utc_today = utc_now.date().isoformat()
+    fresh_query = _build_fresh_query(topic, utc_now)
 
     logger.info("Searching for fresh topic: %s (UTC: %s)", fresh_query, utc_now_iso)
 
@@ -67,6 +68,7 @@ def search_trending_topic() -> dict:
         "snippet": f"Latest developments in {topic}",
         "search_topic": topic,
         "timestamp_utc": utc_now_iso,
+        "utc_date": utc_today,
         "source": "fallback",
         "freshness": "unverified",
     }
@@ -84,50 +86,56 @@ def search_google_news(
     """
     now = now or datetime.datetime.now(datetime.timezone.utc)
     utc_now = utc_now or now.isoformat()
-    fresh_query = fresh_query or _build_fresh_query(topic)
-    google_query = f"{fresh_query} when:1d"
+    fresh_query = fresh_query or _build_fresh_query(topic, now)
 
     try:
-        url = (
-            "https://news.google.com/rss/search?"
-            f"q={quote_plus(google_query)}&hl=en-US&gl=US&ceid=US:en"
-        )
-        resp = requests.get(url, headers=HEADERS, timeout=10)
-        resp.raise_for_status()
-
-        root = ET.fromstring(resp.text)
-        items = root.findall(".//item")
         fresh_results = []
 
-        for item in items[:15]:
-            raw_title = item.findtext("title") or ""
-            title = html.unescape(raw_title).strip()
-            clean_title = title.split(" - ")[0].strip()
-            snippet = _strip_html(item.findtext("description") or "")
-            published_at = _parse_rss_datetime(item.findtext("pubDate"))
+        for google_query in _google_news_queries(topic, fresh_query, now):
+            url = (
+                "https://news.google.com/rss/search?"
+                f"q={quote_plus(google_query)}&hl=en-US&gl=US&ceid=US:en"
+            )
+            logger.info("Google News query: %s", google_query)
+            resp = requests.get(url, headers=HEADERS, timeout=10)
+            resp.raise_for_status()
 
-            if not clean_title or len(clean_title) <= 15:
-                continue
+            root = ET.fromstring(resp.text)
+            items = root.findall(".//item")
 
-            if not _passes_freshness_filter(
-                clean_title,
-                snippet,
-                now=now,
-                published_at=published_at,
-                require_date=True,
-            ):
-                logger.info("Discarded stale Google News result: %s", clean_title)
-                continue
+            for item in items[:15]:
+                raw_title = item.findtext("title") or ""
+                title = html.unescape(raw_title).strip()
+                clean_title = title.split(" - ")[0].strip()
+                snippet = _strip_html(item.findtext("description") or "")
+                published_at = _parse_rss_datetime(item.findtext("pubDate"))
 
-            fresh_results.append({
-                "title": clean_title,
-                "snippet": snippet or f"Latest updates on {topic}",
-                "search_topic": topic,
-                "timestamp_utc": utc_now,
-                "source": "google_news",
-                "published_at": published_at.isoformat() if published_at else None,
-                "freshness": "past_24h",
-            })
+                if not clean_title or len(clean_title) <= 15:
+                    continue
+
+                if not _passes_freshness_filter(
+                    clean_title,
+                    snippet,
+                    now=now,
+                    published_at=published_at,
+                    require_date=True,
+                ):
+                    logger.info("Discarded stale Google News result: %s", clean_title)
+                    continue
+
+                fresh_results.append({
+                    "title": clean_title,
+                    "snippet": snippet or f"Latest updates on {topic}",
+                    "search_topic": topic,
+                    "timestamp_utc": utc_now,
+                    "utc_date": now.date().isoformat(),
+                    "source": "google_news",
+                    "published_at": published_at.isoformat() if published_at else None,
+                    "freshness": "past_24h",
+                })
+
+            if fresh_results:
+                break
 
         if fresh_results:
             chosen = random.choice(fresh_results[:5])
@@ -155,7 +163,7 @@ def search_duckduckgo(
     """
     now = now or datetime.datetime.now(datetime.timezone.utc)
     utc_now = utc_now or now.isoformat()
-    fresh_query = fresh_query or _build_fresh_query(topic)
+    fresh_query = fresh_query or _build_fresh_query(topic, now)
 
     try:
         url = (
@@ -192,6 +200,7 @@ def search_duckduckgo(
                 "snippet": clean_snippet,
                 "search_topic": topic,
                 "timestamp_utc": utc_now,
+                "utc_date": now.date().isoformat(),
                 "source": "duckduckgo",
                 "freshness": "past_24h_or_no_stale_signal",
             })
@@ -209,12 +218,34 @@ def search_duckduckgo(
     return None
 
 
-def _build_fresh_query(topic: str) -> str:
-    """Append freshness terms while keeping the topic readable."""
+def _build_fresh_query(topic: str, now: datetime.datetime | None = None) -> str:
+    """Append freshness terms and the current UTC date to the query."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
     words = topic.split()
     existing = topic.lower()
     additions = [term for term in FRESH_QUERY_TERMS if term not in existing]
-    return " ".join(words + additions)
+    utc_date_terms = [now.date().isoformat(), _format_utc_search_date(now), "UTC"]
+    return " ".join(words + additions + utc_date_terms)
+
+
+def _google_news_queries(topic: str, fresh_query: str, now: datetime.datetime) -> list[str]:
+    """
+    Keep Google News focused on the current UTC day without overloading the
+    first query with every relative freshness phrase.
+    """
+    after_date = (now - datetime.timedelta(hours=FRESHNESS_WINDOW_HOURS)).date().isoformat()
+    before_date = (now + datetime.timedelta(days=1)).date().isoformat()
+    today_context = f"{_format_utc_search_date(now)} {now.date().isoformat()} UTC"
+
+    return [
+        f"{topic} {today_context} when:1d",
+        f"{topic} after:{after_date} before:{before_date}",
+        f"{fresh_query} when:1d",
+    ]
+
+
+def _format_utc_search_date(now: datetime.datetime) -> str:
+    return f"{now.strftime('%B')} {now.day}, {now.year}"
 
 
 def _strip_html(value: str) -> str:
