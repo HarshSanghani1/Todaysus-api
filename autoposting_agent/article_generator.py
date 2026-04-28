@@ -279,7 +279,7 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
             )
             resp.raise_for_status()
             data = resp.json()
-            return data["choices"][0]["message"]["content"].strip()
+            content = data["choices"][0]["message"]["content"].strip()
 
             # Strip markdown fences if present
             content = re.sub(r'^```(?:json)?\s*\n?', '', content)
