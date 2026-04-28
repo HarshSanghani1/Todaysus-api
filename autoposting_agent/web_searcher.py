@@ -26,9 +26,8 @@ HEADERS = {
     )
 }
 
-FRESHNESS_WINDOW_HOURS = 24
-DDG_DATE_FILTER = "d"
-FRESH_QUERY_TERMS = tuple(HOURLY_FOCUSED_KEYWORDS)
+MIN_SOURCE_WORDS = 180
+MAX_SOURCE_CHARS = 14000
 
 STALE_YEAR_RE = re.compile(r"\b(?:2021|2022|2023)\b")
 STALE_TEXT_RE = re.compile(
@@ -160,7 +159,7 @@ def fetch_article_text(source_url: str) -> str:
         return ""
 
     try:
-        resp = requests.get(source_url, headers=HEADERS, timeout=18, allow_redirects=True)
+        resp = requests.get(source_url, headers=HEADERS, timeout=10, allow_redirects=True)
         resp.raise_for_status()
 
         content_type = resp.headers.get("Content-Type", "").lower()
@@ -185,6 +184,12 @@ def fetch_article_text(source_url: str) -> str:
             source_text = source_text[:MAX_SOURCE_CHARS].rsplit(" ", 1)[0]
         return source_text.strip()
 
+    except (requests.exceptions.Timeout, TimeoutError) as exc:
+        logger.debug("Timeout fetching %s: %s", source_url, exc)
+        return ""
+    except requests.exceptions.RequestException as exc:
+        logger.debug("Request error fetching %s: %s", source_url, exc)
+        return ""
     except Exception as exc:
         logger.warning("Could not fetch source text from %s: %s", source_url, exc)
         return ""
@@ -424,8 +429,8 @@ def search_google_news(topic: str, utc_now: str) -> dict:
     """Fallback search using Google News RSS."""
     try:
         url = (
-            "https://html.duckduckgo.com/html/?"
-            f"q={quote_plus(fresh_query)}&df={DDG_DATE_FILTER}"
+            "https://news.google.com/rss/search?"
+            f"q={quote_plus(topic)}&hl=en-US&gl=US&ceid=US:en"
         )
         resp = requests.get(url, headers=HEADERS, timeout=15)
         resp.raise_for_status()
@@ -434,18 +439,18 @@ def search_google_news(topic: str, utc_now: str) -> dict:
         items = root.findall(".//item")
 
         results = []
-        for item in items[:5]:
+        for item in items[:8]:
             raw_title = item.findtext("title", "")
-            clean_title = raw_title.split(" - ")[0].strip()
+            clean_title = raw_title.split(" - ")[0].strip() if raw_title else ""
             snippet = _clean_text(item.findtext("description", ""))
-            source_url = item.findtext("link", "") or ""
-
-            if clean_title:
+            source_link = item.findtext("link", "") or ""
+            
+            if clean_title and len(clean_title) > 15:
                 results.append(
                     {
                         "title": clean_title,
                         "snippet": snippet or f"Latest updates on {topic}",
-                        "source_url": source_url,
+                        "source_url": source_link,
                         "search_topic": topic,
                         "timestamp_utc": utc_now,
                     }
