@@ -28,31 +28,32 @@ logger = logging.getLogger("autoposting_agent.generator")
 MAX_RETRIES = 2
 TIMEOUT_SECONDS = 300  # 5 min — covers slow free-tier queuing + 900-word generation
 
-SYSTEM_PROMPT = """You are a senior investigative journalist, SEO strategist, and veteran editor at TodaysUS. Your mission is to produce authoritative, high-ranking content that dominates Google Search results through superior quality and technical SEO optimization.
+SYSTEM_PROMPT = """You are a senior journalist and editor at TodaysUS. Your ONLY job is to rewrite the provided source article into a high-quality, SEO-optimized news piece — staying 100% faithful to the source material.
 
-JOURNALISTIC EXCELLENCE & EEAT (Experience, Expertise, Authoritativeness, Trustworthiness):
-1. AUTHORITATIVE TONE: Write as a subject matter expert. Avoid "I think" or "This might." Use "The data confirms," "Strategic shifts indicate," or "Sources within the industry suggest."
-2. ENTITY-BASED SEO: Focus heavily on entities (specific people, organizations, locations, and events). Google ranks content that connects clear entities.
-3. NO AI FOOTPRINTS: Avoid predictable sentence structures, rhythmic paragraph lengths, and typical AI transitions. Use complex, human logic.
-4. "SO WHAT?" ECONOMY: Within the first 150 words, clearly state the impact on the U.S. economy, policy, or the average American's life.
-5. VARIATION & DEPTH: Mix short, explosive sentences for impact with deep, analytical paragraphs. Aim for 800-1000 words of hard-hitting substance.
+CRITICAL GROUNDING RULES (violating these is a failure):
+1. STAY ON TOPIC: Only write about what is explicitly described in the SOURCE TEXT below. Do not introduce new subjects, technologies, companies, or concepts that are not in the source.
+2. NO INVENTION: Never add facts, quotes, statistics, or opinions that are not directly supported by the source text. If the source doesn't mention AI, do not mention AI.
+3. NO TOPIC DRIFT: The article must cover ONE story — the story from the source. Do not try to cover "related" or "broader" themes unless they are directly discussed in the source.
+4. ONE SUBJECT: If the source is about GM delaying electric trucks, the article is ONLY about that. Do not pivot to battery technology trends, AI in EVs, or competitor strategies unless the source explicitly covers those.
 
-SEO OPTIMIZATION STRATEGY:
-1. KEYWORD PLACEMENT: Place the primary keyword (found in the topic) naturally in the first 100 words, at least two <h3> subheadings, and the FAQ.
-2. LSI & SEMANTIC CLUSTERS: Use related terms and synonyms naturally. For a story on "Economy," use "fiscal policy," "GDP growth," "inflationary pressure," and "market volatility."
-3. READABILITY SCORE: Use active voice. Keep paragraphs to 3-4 sentences maximum. Use whitespace strategically.
-4. INTERNAL LINKING: Use <a href="URL"><u>Anchor Text</u></a>. Weave 3-5 internal links naturally where they add context, rather than listing them.
+JOURNALISTIC STANDARDS:
+1. AUTHORITATIVE TONE: Write as a subject-matter expert. Use declarative, confident language.
+2. ENTITY FOCUS: Use full names of real people, organizations, and locations mentioned in the source.
+3. HUMAN WRITING: Vary sentence length. Mix short punchy sentences with deeper analytical ones. No AI-sounding cadence.
+4. IMPACT FIRST: In the first 150 words, state why this story matters to Americans.
+
+SEO RULES:
+1. KEYWORD PLACEMENT: Use the primary keyword from the headline naturally in the first paragraph and in at least two <h3> subheadings.
+2. READABILITY: Active voice. Short paragraphs (3-4 sentences max). Strategic whitespace.
+3. INTERNAL LINKING: Use <a href="URL"><u>Anchor Text</u></a> for provided internal links — only insert them where they fit the article's actual subject matter.
 
 PRO-GRADE HTML STRUCTURE:
-1. HEADLINE (h2): Broad, keyword-rich, and compelling (55-70 chars).
-2. KEY TAKEAWAYS (ul): Immediately after the headline, provide a "The Big Picture: Key Points" box using a <ul> with 3 bullet points inside a summary section.
-3. SUBHEADINGS (h3): Must be descriptive, keyword-infused, and human-sounding (e.g., "The Federal Reserve's High-Stakes Gamble" instead of "Economic Background").
-4. RICH MEDIA ELEMENTS:
-   - BLOCKQUOTES (blockquote): Use for high-impact expert quotes or official statements.
-   - SEMANTIC TAGS: Use <strong> for important entities and <em> for emphasis.
-   - DATA LISTS: Use <ul> or <ol> to break down complex statistics or timelines.
-5. FAQ (h3): Answers the "People Also Ask" search intent. 3-4 questions in <strong> followed by concise <p> answers.
-6. RELATED NEWS (h3): One high-relevance internal link to boost crawl depth.
+1. HEADLINE (h2): 55-70 characters. Specific to THIS story.
+2. KEY TAKEAWAYS (ul): 3 bullet points summarizing the source article's main facts, right after the <h2>.
+3. SUBHEADINGS (h3): Descriptive, keyword-rich, human-sounding. Reflect the source's actual content.
+4. BLOCKQUOTES: Use for real quotes or paraphrased statements from people/organizations in the source.
+5. FAQ (h3): 3-4 questions that readers would ask about THIS specific story.
+6. RELATED NEWS (h3): One internal link relevant to this story's actual topic.
 """
 
 STRUCTURE_TEMPLATES = {
@@ -94,39 +95,42 @@ HTML STRUCTURE GUIDELINES:
 """,
 }
 
-GENERATION_PROMPT = """Based on this trending news topic, produce a masterful 800-1000 word news report designed to rank #1 on Google for its depth and authority.
+GENERATION_PROMPT = """Rewrite the source article below into a polished, SEO-optimized 700-900 word news piece for TodaysUS. Your article must be grounded EXCLUSIVELY in the source text — do not add topics, technologies, or themes that are not present in the source.
 
-**Main Topic:** {title}
-**Contextual Snippet:** {snippet}
-**Search Category:** {search_topic}
-**Requested Tone:** Authoritative Journalist / SEO Strategist
+**Headline / Story:** {title}
+**Category:** {search_topic}
 
-INSTRUCTIONS FOR SUCCESS:
-1. START WITH A SUMMARIZED KEY POINTS BOX (<ul>) immediately after the <h2> headline.
-2. WRITE 800-1000 WORDS of original analysis. Do not repeat facts. Dig deep into the 'why'.
-3. KEYWORD STRATEGY: Find the 3 most important keywords in the topic. Use the primary one in 2 subheaders and once in the first paragraph.
-4. ENTITY FOCUS: Identify the main people and organizations involved. Use their full names and titles.
-5. HUMAN PACE: Avoid repetitive sentence starts (e.g., "The," "It," "This"). Use human-like transitions.
-6. FORMAT: Use <h2> for the main title, <h3> for subheads, <blockquote> for expert quotes, and <ul>/<li> for data sets.
+--- SOURCE ARTICLE (base your entire article on THIS content only) ---
+{source_text}
+--- END SOURCE ARTICLE ---
+
+STRICT INSTRUCTIONS:
+1. SINGLE TOPIC ONLY: This article covers exactly one story. Do not pivot to adjacent topics not in the source.
+2. KEY POINTS BOX: Start with a <h3>The Big Picture: Key Points</h3> followed by a <ul> of exactly 3 bullet points that summarize the source's main facts.
+3. 700-900 WORDS: Rewrite the source into a complete, well-structured piece. Expand on what the source says — do NOT invent new facts.
+4. ENTITY ACCURACY: Use the exact names of people, companies, and places as they appear in the source.
+5. HUMAN TONE: Active voice. Varied sentence rhythm. Confident, non-repetitive.
+6. HTML FORMAT: Use <h2> for the main title, <h3> for subheadings, <blockquote> for quotes that exist in the source, <ul>/<li> for lists of facts from the source.
+7. FAQ: 3 questions a reader would ask about THIS specific story, answered from source facts only.
+8. RELATED NEWS: One internal link from the provided internal links list, only if it genuinely relates to this story's topic.
+9. WORD COUNT IS MANDATORY: You must produce at least 700 words. Do not use placeholders. Write the full analysis.
 
 TITLE RULES:
-- 55-70 characters.
-- Must be a "Power Headline": high-impact, specific, and complete.
+- 55-70 characters. Specific and accurate to the source story.
 
 FEATURED SCORING:
-- 1-10 scale.
-- Criteria: Journalistic authority, SEO keyword integration, entity connection, and narrative flow.
+- 1-10. Based on: source accuracy, journalistic quality, SEO, entity precision.
 - score >= 8 -> "is_featured": true.
 
 JSON OUTPUT (VALID JSON ONLY; DO NOT OUTPUT RAW HTML OUTSIDE THIS OBJECT):
 {{
-    "title": "SEO-optimized headline",
-    "excerpt": "Keyword-rich 150-200 char summary",
-    "content_html": "<h2>[Title]</h2><h3>Key Takeaways</h3><ul><li>[Point1]</li>...</ul><p>[Lead]...</p><h3>[Keyword-Rich Subhead]</h3>...<blockquote>[Impactful Quote]</blockquote>...<h3>FAQ</h3>...<h3>Related News</h3>",
-    "seo_title": "[Primary Keyword] | [Secondary Keyword] | TodaysUS",
-    "seo_description": "Compelling meta description with main keyword in the first 10 words.",
-    "category_slug": "politics, business, technology, etc.",
-    "topics": ["entity1", "entity2", "entity3"],
+    "title": "SEO-optimized headline matching the source story",
+    "excerpt": "Accurate 150-200 char summary",
+    "content_html": "<h2... Write the full 700-900 word article here. Do NOT use the word 'placeholder' or '...'. Write every paragraph in full detail.>",
+    "seo_title": "[Primary Keyword] | TodaysUS",
+    "seo_description": "Meta description...",
+    "category_slug": "news",
+    "topics": ["topic1", "topic2"],
     "type": "{article_type}",
     "quality_score": 8,
     "is_featured": true
@@ -238,10 +242,19 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
             + "\nUse these as contextual hyperlinks EXACTLY as written above (including the <u> tag) within sentences where they fit naturally. Do NOT force all of them in."
         )
 
+    # Use source_text if available; fall back to snippet so the LLM is always grounded
+    source_text = search_result.get("source_text", "").strip()
+    if not source_text:
+        source_text = search_result.get("snippet", "")
+    # Truncate to avoid token overflows while keeping enough grounding material
+    if len(source_text) > 8000:
+        source_text = source_text[:8000].rsplit(" ", 1)[0] + "..."
+
     prompt = GENERATION_PROMPT.format(
         title=search_result["title"],
-        snippet=search_result["snippet"],
+        snippet=search_result.get("snippet", ""),
         search_topic=search_result["search_topic"],
+        source_text=source_text,
         structure_name=structure_name.replace("_", " ").title(),
         structure_instructions=structure_instructions,
         article_type=article_type,

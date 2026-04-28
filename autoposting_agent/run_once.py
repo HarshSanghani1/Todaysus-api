@@ -12,6 +12,7 @@ Cron command:
 import argparse
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -23,7 +24,7 @@ load_dotenv()
 
 from autoposting_agent.article_generator import generate_article
 from autoposting_agent.config import NVIDIA_API_KEY
-from autoposting_agent.publisher import get_internal_links, is_duplicate, publish_article
+from autoposting_agent.publisher import ensure_topics_exist, get_internal_links, is_duplicate, publish_article
 from autoposting_agent.web_searcher import MIN_SOURCE_WORDS, scrape_source_url, search_trending_topic
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -71,12 +72,32 @@ def _log_scrape_result(search_result: dict) -> None:
     logger.info("Source preview: %s%s", preview, "..." if len(source_text) > 500 else "")
 
 
+_STOP_WORDS = {
+    "the", "and", "for", "are", "was", "were", "with", "that", "this",
+    "from", "have", "has", "had", "not", "but", "its", "news", "today",
+    "live", "latest", "updates", "breaking", "what", "how", "why",
+    "after", "amid", "over", "into", "will", "amid", "amid", "amid",
+}
+
 def _seed_topics(search_result: dict) -> list[dict]:
-    return [
-        {"name": word, "slug": word.lower().replace(" ", "-")}
-        for word in search_result.get("search_topic", "").split()
-        if len(word) > 3
-    ][:5]
+    """Extract meaningful entity-level keywords from the article title for DB link seeding.
+    Using the title (not the raw search_topic string) avoids fetching unrelated internal links.
+    """
+    title = search_result.get("title", "") or search_result.get("search_topic", "")
+    words = re.findall(r"[A-Za-z][a-z]{2,}", title)
+    seeds = [
+        w for w in words
+        if len(w) > 3 and w.lower() not in _STOP_WORDS
+    ]
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for w in seeds:
+        lw = w.lower()
+        if lw not in seen:
+            seen.add(lw)
+            unique.append({"name": w, "slug": lw})
+    return unique[:6]
 
 
 def run_once() -> None:
@@ -115,7 +136,9 @@ def run_once() -> None:
         sys.exit(1)
 
     logger.info("Step 2/4: Fetching internal link candidates from DB...")
-    internal_links = get_internal_links(_seed_topics(search_result), limit=8)
+    seed_topics = _seed_topics(search_result)
+    ensure_topics_exist(seed_topics)
+    internal_links = get_internal_links(seed_topics, limit=8)
     logger.info("%s internal link(s) found.", len(internal_links))
 
     logger.info("Step 3/4: Generating grounded article via NVIDIA API...")

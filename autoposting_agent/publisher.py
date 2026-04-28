@@ -76,57 +76,130 @@ def is_duplicate(title: str) -> bool:
     return existing is not None
 
 
-def get_internal_links(article_topics: list[dict], limit: int = 8) -> list[dict]:
+def ensure_topics_exist(article_topics: list[dict]) -> None:
     """
-    Fetch active topics from the DB that differ from the article's own topics.
-    Returns list of {"name": str, "slug": str, "url": str} ready for the LLM.
+    Upsert lightweight topic stubs into the DB for every seed keyword BEFORE
+    the internal-link lookup runs.  This ensures the relevance search always
+    finds topically-correct candidates even when the topic is brand-new.
 
-    Preference order:
-      1. Topics that share keywords with article topics (most relevant)
-      2. High article_count topics (popular topics = link authority)
+    Stubs are created with article_count=0 so they don't pollute the popular-
+    topic ranking until a real article is published against them.
+    """
+    if not article_topics:
+        return
+    try:
+        db = _get_db()
+        now = datetime.utcnow()
+        for t in article_topics:
+            slug = t.get("slug", "")
+            name = t.get("name", slug)
+            if not slug:
+                continue
+            db.topics.update_one(
+                {"slug": slug},
+                {
+                    "$setOnInsert": {
+                        "name": name,
+                        "slug": slug,
+                        "description": None,
+                        "article_count": 0,
+                        "is_active": True,
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                },
+                upsert=True,
+            )
+        logger.info(f"🏷️  Ensured {len(article_topics)} topic stub(s) exist in DB")
+    except Exception as e:
+        logger.warning(f"⚠️  Could not ensure topic stubs: {e}")
+
+
+def get_internal_links(
+    article_topics: list[dict],
+    category: dict | None = None,
+    limit: int = 8,
+) -> list[dict]:
+    """
+    Fetch relevant internal link candidates for the article.
+
+    Strategy (in priority order):
+      1. Topics in the DB that share keywords with the article's own topics
+         (scored by keyword overlap + article_count popularity).
+      2. If fewer than 2 topically-relevant links are found, pad with the
+         article's category page link so the LLM always has *something*
+         meaningful to link to — never random unrelated topics.
+
+    Returns list of {"name": str, "slug": str, "url": str}.
     """
     try:
         db = _get_db()
         own_slugs = {t.get("slug", "") for t in article_topics}
 
-        # Prefer topics related by keyword to the article's own topic names
-        keyword_hints = []
+        # Build keyword hints from the article's seed topics
+        keyword_hints: list[str] = []
         for t in article_topics:
-            name = t.get("name", "")
-            keyword_hints.extend(name.lower().split())
+            keyword_hints.extend(t.get("name", "").lower().split())
+        keyword_set = set(keyword_hints)
 
-        # Fetch up to 40 active topics sorted by popularity
+        # Fetch up to 60 active topics sorted by popularity
         candidates = list(
             db.topics.find(
                 {"is_active": True, "article_count": {"$gte": 1}},
                 {"name": 1, "slug": 1, "article_count": 1},
             )
             .sort("article_count", -1)
-            .limit(40)
+            .limit(60)
         )
 
-        # Score: boost ones whose name shares words with article topics
+        # Score: ONLY boost topics whose name genuinely overlaps with article keywords.
+        # A zero-overlap topic scores only its article_count which is deprioritised
+        # far below any topic with even 1 keyword match.
         def relevance_score(topic):
             name_words = set(topic.get("name", "").lower().split())
-            overlap = len(name_words & set(keyword_hints))
-            return (overlap * 10) + topic.get("article_count", 0)
+            overlap = len(name_words & keyword_set)
+            if overlap == 0:
+                return topic.get("article_count", 0)          # low base score
+            return (overlap * 100) + topic.get("article_count", 0)  # high score
 
-        # Filter out own topics, sort by relevance
+        # Filter out the article's own topics, rank by relevance
         candidates = [c for c in candidates if c.get("slug", "") not in own_slugs]
         candidates.sort(key=relevance_score, reverse=True)
 
-        links = []
-        for c in candidates[:limit]:
+        # Only keep candidates that have at least 1 keyword overlap with the article
+        relevant = [c for c in candidates if relevance_score(c) >= 100]
+        fallback_pool = [c for c in candidates if relevance_score(c) < 100]
+
+        # Build links from relevant candidates (up to limit)
+        links: list[dict] = []
+        for c in relevant[:limit]:
             slug = c.get("slug", "")
             name = c.get("name", slug)
-            links.append({
-                "name": name,
-                "slug": slug,
-                "url": f"{SITE_BASE_URL}/topics/{slug}",
-            })
+            links.append({"name": name, "slug": slug, "url": f"{SITE_BASE_URL}/topics/{slug}"})
 
-        logger.info(f"🔗 Found {len(links)} internal link candidates from DB topics")
-        return links
+        # If we have fewer than 2 relevant topic links, add the category page link
+        # so the LLM always has at least one meaningful, on-topic internal link.
+        if len(links) < 2 and category:
+            cat_slug = category.get("slug", "")
+            cat_name = category.get("name", cat_slug.title())
+            if cat_slug:
+                links.insert(0, {
+                    "name": f"{cat_name} News",
+                    "slug": cat_slug,
+                    "url": f"{SITE_BASE_URL}/category/{cat_slug}",
+                })
+                logger.info(f"📂 Added category fallback link: /category/{cat_slug}")
+
+        # If still short, pad with a few popular-but-different topics (max 2)
+        # so the LLM has options, but label them clearly as low-priority.
+        if len(links) < 2:
+            for c in fallback_pool[:2]:
+                slug = c.get("slug", "")
+                name = c.get("name", slug)
+                links.append({"name": name, "slug": slug, "url": f"{SITE_BASE_URL}/topics/{slug}"})
+
+        logger.info(f"🔗 Found {len(links)} internal link candidate(s) ({len(relevant)} topic match(es))")
+        return links[:limit]
 
     except Exception as e:
         logger.warning(f"⚠️  Could not fetch internal links from DB: {e}")
