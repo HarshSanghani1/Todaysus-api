@@ -207,6 +207,10 @@ def publish_article(article_data: dict) -> dict | None:
             "auto_generated": True,
             "quality_score": quality_score,
             "article_structure": article_data.get("article_structure", ""),
+            "source_url": article_data.get("source_url", ""),
+            "source_title": article_data.get("source_title", ""),
+            "source_word_count": article_data.get("source_word_count", 0),
+            "source_timestamp_utc": article_data.get("source_timestamp_utc", ""),
         }
 
         article["canonical_url"] = article_data.get("canonical_url") or build_canonical_url(article)

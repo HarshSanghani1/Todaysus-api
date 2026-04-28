@@ -72,6 +72,8 @@ def run_pipeline():
 
     logger.info(f"   Topic: {search_result['title']}")
     logger.info(f"   Context: {search_result.get('snippet', '')[:100]}...")
+    logger.info(f"   Source URL: {search_result.get('source_url', '')}")
+    logger.info(f"   Source words: {search_result.get('source_word_count', 0)}")
 
     # ── Step 2: Fetch internal link candidates from DB ────────────────────
     # We use lightweight topic slugs from the search term to seed the query.

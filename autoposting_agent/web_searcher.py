@@ -1,19 +1,20 @@
 """
-Web searcher - finds fresh trending news topics via Google News first,
-then DuckDuckGo HTML search as a fallback.
+Web searcher - finds trending news topics and fetches source text for grounding.
+No API key required.
 """
 import datetime
-import email.utils
 import html
+import json
 import logging
 import random
 import re
 import xml.etree.ElementTree as ET
-from urllib.parse import quote_plus
+from html.parser import HTMLParser
+from urllib.parse import parse_qs, quote, quote_plus, unquote, urljoin, urlparse
 
 import requests
 
-from autoposting_agent.config import HOURLY_FOCUSED_KEYWORDS, SEARCH_TOPICS
+from autoposting_agent.config import SEARCH_TOPICS
 
 logger = logging.getLogger("autoposting_agent.searcher")
 
@@ -40,131 +41,387 @@ RELATIVE_TIME_RE = re.compile(
     re.IGNORECASE,
 )
 
+MIN_SOURCE_WORDS = 180
+MAX_SOURCE_CHARS = 14000
 
-def search_trending_topic() -> dict:
+
+class ReadableTextParser(HTMLParser):
+    """Extract readable article-like text without adding third-party dependencies."""
+
+    CAPTURE_TAGS = {"h1", "h2", "h3", "p", "li", "blockquote", "td", "th"}
+    SKIP_TAGS = {"script", "style", "noscript", "svg", "form", "nav", "footer"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self._skip_depth = 0
+        self._capture_depth = 0
+        self._current = []
+        self.blocks = []
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag in self.SKIP_TAGS:
+            self._skip_depth += 1
+        if self._skip_depth == 0 and tag in self.CAPTURE_TAGS:
+            self._flush()
+            self._capture_depth += 1
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if self._skip_depth == 0 and tag in self.CAPTURE_TAGS:
+            self._flush()
+            self._capture_depth = max(0, self._capture_depth - 1)
+        if tag in self.SKIP_TAGS and self._skip_depth > 0:
+            self._skip_depth -= 1
+
+    def handle_data(self, data):
+        if self._skip_depth == 0 and self._capture_depth > 0:
+            cleaned = _clean_text(data)
+            if cleaned:
+                self._current.append(cleaned)
+
+    def close(self):
+        self._flush()
+        super().close()
+
+    def _flush(self):
+        if not self._current:
+            return
+        text = _clean_text(" ".join(self._current))
+        self._current = []
+        if _is_useful_block(text):
+            self.blocks.append(text)
+
+
+def _clean_text(value: str) -> str:
+    value = html.unescape(value or "")
+    value = re.sub(r"<[^>]+>", " ", value)
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
+
+
+def _is_useful_block(text: str) -> bool:
+    if len(text) < 35:
+        return False
+    lowered = text.lower()
+    boilerplate_markers = [
+        "accept cookies",
+        "all rights reserved",
+        "subscribe",
+        "sign up for",
+        "privacy policy",
+        "terms of service",
+        "advertisement",
+        "enable javascript",
+    ]
+    return not any(marker in lowered for marker in boilerplate_markers)
+
+
+def _word_count(text: str) -> int:
+    return len(re.findall(r"\b[\w'-]+\b", text or ""))
+
+
+def _resolve_duckduckgo_url(raw_url: str) -> str:
+    raw_url = html.unescape(raw_url or "").strip()
+    if not raw_url:
+        return ""
+
+    if raw_url.startswith("//"):
+        raw_url = "https:" + raw_url
+    elif raw_url.startswith("/"):
+        raw_url = urljoin("https://duckduckgo.com", raw_url)
+
+    parsed = urlparse(raw_url)
+    if "duckduckgo.com" in parsed.netloc:
+        query = parse_qs(parsed.query)
+        if query.get("uddg"):
+            return unquote(query["uddg"][0])
+
+    return raw_url
+
+
+def _resolve_bing_news_url(raw_url: str) -> str:
+    raw_url = html.unescape(raw_url or "").strip()
+    if not raw_url:
+        return ""
+
+    parsed = urlparse(raw_url)
+    if "bing.com" in parsed.netloc:
+        query = parse_qs(parsed.query)
+        if query.get("url"):
+            return unquote(query["url"][0])
+
+    return raw_url
+
+
+def fetch_article_text(source_url: str) -> str:
+    """Fetch a result URL and return cleaned article-like text."""
+    if not source_url:
+        return ""
+
+    try:
+        resp = requests.get(source_url, headers=HEADERS, timeout=18, allow_redirects=True)
+        resp.raise_for_status()
+
+        content_type = resp.headers.get("Content-Type", "").lower()
+        if "html" not in content_type and "text" not in content_type:
+            logger.info("Skipping non-HTML source: %s", source_url)
+            return ""
+
+        page_html = resp.text[:1_500_000]
+        page_html = re.sub(r"(?is)<(script|style|noscript|svg|form).*?</\1>", " ", page_html)
+
+        parser = ReadableTextParser()
+        parser.feed(page_html)
+        parser.close()
+
+        source_text = "\n\n".join(parser.blocks)
+        if _word_count(source_text) < MIN_SOURCE_WORDS:
+            api_text = fetch_wordpress_api_text(source_url)
+            if _word_count(api_text) > _word_count(source_text):
+                source_text = api_text
+
+        if len(source_text) > MAX_SOURCE_CHARS:
+            source_text = source_text[:MAX_SOURCE_CHARS].rsplit(" ", 1)[0]
+        return source_text.strip()
+
+    except Exception as exc:
+        logger.warning("Could not fetch source text from %s: %s", source_url, exc)
+        return ""
+
+
+def fetch_wordpress_api_text(source_url: str) -> str:
+    """Fetch content from WordPress JSON routes used by some static/SPAs."""
+    parsed = urlparse(source_url)
+    slug = parsed.path.strip("/").split("/")[-1]
+    if not parsed.scheme or not parsed.netloc or not slug:
+        return ""
+
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+    wp_path = f"/wp-json/wp/v2/posts?slug={quote(slug)}&per_page=1"
+    candidate_urls = [
+        f"{base_url}/api/fetch?path={quote(wp_path, safe='')}",
+        f"{base_url}{wp_path}",
+    ]
+
+    for api_url in candidate_urls:
+        try:
+            resp = requests.get(api_url, headers={**HEADERS, "Accept": "application/json"}, timeout=15)
+            resp.raise_for_status()
+
+            try:
+                payload = resp.json()
+            except json.JSONDecodeError:
+                continue
+
+            post = payload[0] if isinstance(payload, list) and payload else None
+            if not isinstance(post, dict):
+                continue
+
+            title = _clean_text(post.get("title", {}).get("rendered", ""))
+            excerpt = _clean_text(post.get("excerpt", {}).get("rendered", ""))
+            content = _clean_text(post.get("content", {}).get("rendered", ""))
+            acf = post.get("acf", {}) if isinstance(post.get("acf"), dict) else {}
+            acf_content = _clean_text(acf.get("english_content", ""))
+
+            parts = [part for part in [title, excerpt, content, acf_content] if part]
+            source_text = "\n\n".join(dict.fromkeys(parts))
+            if source_text:
+                logger.info("Fetched WordPress API source with %s words: %s", _word_count(source_text), api_url)
+                return source_text
+
+        except Exception as exc:
+            logger.info("WordPress API fallback failed for %s: %s", api_url, exc)
+
+    return ""
+
+
+def _extract_duckduckgo_results(page_html: str, topic: str, utc_now: str) -> list[dict]:
+    anchors = re.findall(r'(<a[^>]+class="result__a"[^>]*>)(.*?)</a>', page_html, re.DOTALL)
+    snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)</td>', page_html, re.DOTALL)
+
+    results = []
+    for i, (start_tag, anchor_html) in enumerate(anchors[:10]):
+        href_match = re.search(r'href="([^"]+)"', start_tag)
+        clean_title = _clean_text(anchor_html)
+        clean_snippet = _clean_text(snippets[i]) if i < len(snippets) else ""
+        source_url = _resolve_duckduckgo_url(href_match.group(1) if href_match else "")
+
+        if clean_title and len(clean_title) > 15:
+            results.append(
+                {
+                    "title": clean_title,
+                    "snippet": clean_snippet,
+                    "source_url": source_url,
+                    "search_topic": topic,
+                    "timestamp_utc": utc_now,
+                }
+            )
+    return results
+
+
+def _attach_source_text(results: list[dict]) -> dict | None:
+    if not results:
+        return None
+
+    fallback = None
+    for result in results[:6]:
+        source_text = fetch_article_text(result.get("source_url", ""))
+        word_count = _word_count(source_text)
+        result["source_text"] = source_text
+        result["source_word_count"] = word_count
+
+        if fallback is None or word_count > fallback.get("source_word_count", 0):
+            fallback = result
+
+        if word_count >= MIN_SOURCE_WORDS:
+            logger.info(
+                "Picked source with %s words: %s",
+                word_count,
+                result.get("title", ""),
+            )
+            return result
+
+    if fallback:
+        logger.warning(
+            "No source reached %s words; best had %s words: %s",
+            MIN_SOURCE_WORDS,
+            fallback.get("source_word_count", 0),
+            fallback.get("title", ""),
+        )
+    return fallback
+
+
+def _search_one_topic(topic: str, utc_now: str) -> dict:
+    try:
+        url = f"https://html.duckduckgo.com/html/?q={quote_plus(topic)}&df=d"
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+
+        results = _extract_duckduckgo_results(resp.text, topic, utc_now)
+        chosen = _attach_source_text(results)
+        if chosen:
+            logger.info("Picked topic from DDG: %s", chosen["title"])
+            return chosen
+
+        logger.warning("No DuckDuckGo results found, trying Bing News RSS...")
+        return search_bing_news(topic, utc_now)
+
+    except Exception as exc:
+        logger.error("Search error: %s", exc)
+        return search_bing_news(topic, utc_now)
+
+
+def search_trending_topic(max_topic_attempts: int = 6) -> dict:
     """
-    Pick a random search topic, search fresh news sources, and return a dict
-    with the best headline + snippet for article generation.
+    Try several random search topics, fetch source text, and return the first
+    result with enough grounding material.
     """
-    topic = random.choice(SEARCH_TOPICS)
-    utc_now = datetime.datetime.now(datetime.timezone.utc)
-    utc_now_iso = utc_now.isoformat()
-    utc_today = utc_now.date().isoformat()
-    fresh_query = _build_fresh_query(topic, utc_now)
+    utc_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    topics = random.sample(SEARCH_TOPICS, k=min(max_topic_attempts, len(SEARCH_TOPICS)))
+    best_result = None
 
-    logger.info("Searching for fresh topic: %s (UTC: %s)", fresh_query, utc_now_iso)
+    for idx, topic in enumerate(topics, start=1):
+        logger.info("Searching for: %s (attempt %s/%s, UTC: %s)", topic, idx, len(topics), utc_now)
+        result = _search_one_topic(topic, utc_now)
+        source_words = int(result.get("source_word_count") or 0) if result else 0
 
-    google_result = search_google_news(topic, utc_now_iso, utc_now, fresh_query)
-    if google_result:
-        return google_result
+        if result and (best_result is None or source_words > best_result.get("source_word_count", 0)):
+            best_result = result
 
-    ddg_result = search_duckduckgo(topic, utc_now_iso, utc_now, fresh_query)
-    if ddg_result:
-        return ddg_result
+        if source_words >= MIN_SOURCE_WORDS:
+            return result
 
-    logger.warning("No fresh search results passed filtering. Falling back to base topic.")
+        logger.warning("Attempt %s had only %s source words; trying another topic.", idx, source_words)
+
+    if best_result:
+        logger.warning(
+            "No attempted topic reached %s source words; returning best result with %s words.",
+            MIN_SOURCE_WORDS,
+            best_result.get("source_word_count", 0),
+        )
+        return best_result
+
+    topic = topics[0] if topics else "breaking news US today"
     return {
         "title": topic,
         "snippet": f"Latest developments in {topic}",
+        "source_url": "",
+        "source_text": "",
+        "source_word_count": 0,
         "search_topic": topic,
-        "timestamp_utc": utc_now_iso,
-        "utc_date": utc_today,
-        "source": "fallback",
-        "freshness": "unverified",
+        "timestamp_utc": utc_now,
     }
 
 
-def search_google_news(
-    topic: str,
-    utc_now: str | None = None,
-    now: datetime.datetime | None = None,
-    fresh_query: str | None = None,
-) -> dict | None:
-    """
-    Search Google News RSS first. Google News RSS includes publish timestamps,
-    which lets us enforce a real 24-hour freshness window.
-    """
-    now = now or datetime.datetime.now(datetime.timezone.utc)
-    utc_now = utc_now or now.isoformat()
-    fresh_query = fresh_query or _build_fresh_query(topic, now)
+def scrape_source_url(source_url: str, title: str | None = None, search_topic: str = "manual source URL") -> dict:
+    """Build a search_result-like object from a specific URL for local testing."""
+    utc_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    source_text = fetch_article_text(source_url)
+    source_word_count = _word_count(source_text)
+    clean_title = title or ""
 
+    if not clean_title and source_text:
+        clean_title = source_text.splitlines()[0].strip()
+
+    if not clean_title:
+        parsed = urlparse(source_url)
+        clean_title = parsed.path.strip("/").split("/")[-1].replace("-", " ").title()
+
+    snippet = source_text[:280].replace("\n", " ").strip() if source_text else ""
+    return {
+        "title": clean_title,
+        "snippet": snippet,
+        "source_url": source_url,
+        "source_text": source_text,
+        "source_word_count": source_word_count,
+        "search_topic": search_topic,
+        "timestamp_utc": utc_now,
+    }
+
+
+def search_bing_news(topic: str, utc_now: str) -> dict:
+    """Fallback search using Bing News RSS, which usually includes publisher URLs."""
     try:
-        fresh_results = []
+        url = f"https://www.bing.com/news/search?q={quote_plus(topic)}&format=rss&cc=US&setlang=en-US"
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        resp.raise_for_status()
 
-        for google_query in _google_news_queries(topic, fresh_query, now):
-            url = (
-                "https://news.google.com/rss/search?"
-                f"q={quote_plus(google_query)}&hl=en-US&gl=US&ceid=US:en"
-            )
-            logger.info("Google News query: %s", google_query)
-            resp = requests.get(url, headers=HEADERS, timeout=10)
-            resp.raise_for_status()
+        root = ET.fromstring(resp.text)
+        items = root.findall(".//item")
 
-            root = ET.fromstring(resp.text)
-            items = root.findall(".//item")
+        results = []
+        for item in items[:8]:
+            clean_title = _clean_text(item.findtext("title", ""))
+            snippet = _clean_text(item.findtext("description", ""))
+            source_url = _resolve_bing_news_url(item.findtext("link", "") or "")
 
-            for item in items[:15]:
-                raw_title = item.findtext("title") or ""
-                title = html.unescape(raw_title).strip()
-                clean_title = title.split(" - ")[0].strip()
-                snippet = _strip_html(item.findtext("description") or "")
-                published_at = _parse_rss_datetime(item.findtext("pubDate"))
+            if clean_title:
+                results.append(
+                    {
+                        "title": clean_title,
+                        "snippet": snippet or f"Latest updates on {topic}",
+                        "source_url": source_url,
+                        "search_topic": topic,
+                        "timestamp_utc": utc_now,
+                    }
+                )
 
-                if not clean_title or len(clean_title) <= 15:
-                    continue
-
-                if not _passes_freshness_filter(
-                    clean_title,
-                    snippet,
-                    now=now,
-                    published_at=published_at,
-                    require_date=True,
-                ):
-                    logger.info("Discarded stale Google News result: %s", clean_title)
-                    continue
-
-                fresh_results.append({
-                    "title": clean_title,
-                    "snippet": snippet or f"Latest updates on {topic}",
-                    "search_topic": topic,
-                    "timestamp_utc": utc_now,
-                    "utc_date": now.date().isoformat(),
-                    "source": "google_news",
-                    "published_at": published_at.isoformat() if published_at else None,
-                    "freshness": "past_24h",
-                })
-
-            if fresh_results:
-                break
-
-        if fresh_results:
-            chosen = random.choice(fresh_results[:5])
-            logger.info("Picked topic from Google News: %s", chosen["title"])
+        chosen = _attach_source_text(results)
+        if chosen and chosen.get("source_word_count", 0) >= MIN_SOURCE_WORDS:
+            logger.info("Picked topic from Bing News: %s", chosen["title"])
             return chosen
 
-        logger.warning("No Google News RSS results passed the freshness filter.")
+        logger.warning("Bing News did not provide enough source text, trying Google News RSS...")
+        return search_google_news(topic, utc_now)
 
-    except Exception as e:
-        logger.error("Google News search error: %s", e)
+    except Exception as exc:
+        logger.error("Bing News fallback error: %s", exc)
+        return search_google_news(topic, utc_now)
 
-    return None
 
-
-def search_duckduckgo(
-    topic: str,
-    utc_now: str | None = None,
-    now: datetime.datetime | None = None,
-    fresh_query: str | None = None,
-) -> dict | None:
-    """
-    Fallback search using DuckDuckGo HTML with df=d and an extra stale-date
-    snippet filter. Results without a visible date are allowed only after the
-    DuckDuckGo day filter has already narrowed the page.
-    """
-    now = now or datetime.datetime.now(datetime.timezone.utc)
-    utc_now = utc_now or now.isoformat()
-    fresh_query = fresh_query or _build_fresh_query(topic, now)
-
+def search_google_news(topic: str, utc_now: str) -> dict:
+    """Fallback search using Google News RSS."""
     try:
         url = (
             "https://html.duckduckgo.com/html/?"
@@ -172,154 +429,42 @@ def search_duckduckgo(
         )
         resp = requests.get(url, headers=HEADERS, timeout=15)
         resp.raise_for_status()
-        page_html = resp.text
 
-        titles = re.findall(r'class="result__a"[^>]*>(.*?)</a>', page_html, re.DOTALL)
-        snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)</td>', page_html, re.DOTALL)
+        root = ET.fromstring(resp.text)
+        items = root.findall(".//item")
 
         results = []
-        for i, title in enumerate(titles[:15]):
-            clean_title = _strip_html(title)
-            clean_snippet = _strip_html(snippets[i]) if i < len(snippets) else ""
+        for item in items[:5]:
+            raw_title = item.findtext("title", "")
+            clean_title = raw_title.split(" - ")[0].strip()
+            snippet = _clean_text(item.findtext("description", ""))
+            source_url = item.findtext("link", "") or ""
 
-            if not clean_title or len(clean_title) <= 15:
-                continue
+            if clean_title:
+                results.append(
+                    {
+                        "title": clean_title,
+                        "snippet": snippet or f"Latest updates on {topic}",
+                        "source_url": source_url,
+                        "search_topic": topic,
+                        "timestamp_utc": utc_now,
+                    }
+                )
 
-            if not _passes_freshness_filter(
-                clean_title,
-                clean_snippet,
-                now=now,
-                published_at=None,
-                require_date=False,
-            ):
-                logger.info("Discarded stale DuckDuckGo result: %s", clean_title)
-                continue
-
-            results.append({
-                "title": clean_title,
-                "snippet": clean_snippet,
-                "search_topic": topic,
-                "timestamp_utc": utc_now,
-                "utc_date": now.date().isoformat(),
-                "source": "duckduckgo",
-                "freshness": "past_24h_or_no_stale_signal",
-            })
-
-        if results:
-            chosen = random.choice(results[:5])
-            logger.info("Picked topic from DuckDuckGo: %s", chosen["title"])
+        chosen = _attach_source_text(results)
+        if chosen:
+            logger.info("Picked topic from Google News: %s", chosen["title"])
             return chosen
 
-        logger.warning("No DuckDuckGo results passed the freshness filter.")
+    except Exception as exc:
+        logger.error("Google News fallback error: %s", exc)
 
-    except Exception as e:
-        logger.error("DuckDuckGo search error: %s", e)
-
-    return None
-
-
-def _build_fresh_query(topic: str, now: datetime.datetime | None = None) -> str:
-    """Append freshness terms and the current UTC date to the query."""
-    now = now or datetime.datetime.now(datetime.timezone.utc)
-    words = topic.split()
-    existing = topic.lower()
-    additions = [term for term in FRESH_QUERY_TERMS if term not in existing]
-    utc_date_terms = [now.date().isoformat(), _format_utc_search_date(now), "UTC"]
-    return " ".join(words + additions + utc_date_terms)
-
-
-def _google_news_queries(topic: str, fresh_query: str, now: datetime.datetime) -> list[str]:
-    """
-    Keep Google News focused on the current UTC day without overloading the
-    first query with every relative freshness phrase.
-    """
-    after_date = (now - datetime.timedelta(hours=FRESHNESS_WINDOW_HOURS)).date().isoformat()
-    before_date = (now + datetime.timedelta(days=1)).date().isoformat()
-    today_context = f"{_format_utc_search_date(now)} {now.date().isoformat()} UTC"
-
-    return [
-        f"{topic} {today_context} when:1d",
-        f"{topic} after:{after_date} before:{before_date}",
-        f"{fresh_query} when:1d",
-    ]
-
-
-def _format_utc_search_date(now: datetime.datetime) -> str:
-    return f"{now.strftime('%B')} {now.day}, {now.year}"
-
-
-def _strip_html(value: str) -> str:
-    """Remove tags/entities and normalize whitespace from scraped text."""
-    without_tags = re.sub(r"<[^>]+>", " ", value or "")
-    decoded = html.unescape(without_tags)
-    return re.sub(r"\s+", " ", decoded).strip()
-
-
-def _parse_rss_datetime(value: str | None) -> datetime.datetime | None:
-    if not value:
-        return None
-    try:
-        parsed = email.utils.parsedate_to_datetime(value)
-    except (TypeError, ValueError):
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
-    return parsed.astimezone(datetime.timezone.utc)
-
-
-def _passes_freshness_filter(
-    title: str,
-    snippet: str,
-    *,
-    now: datetime.datetime,
-    published_at: datetime.datetime | None,
-    require_date: bool,
-) -> bool:
-    combined = f"{title} {snippet}".lower()
-
-    if STALE_YEAR_RE.search(combined) or STALE_TEXT_RE.search(combined):
-        return False
-
-    if published_at is not None:
-        age_hours = (now - published_at).total_seconds() / 3600
-        if not 0 <= age_hours <= FRESHNESS_WINDOW_HOURS:
-            return False
-
-        relative_age = _extract_relative_age_hours(combined)
-        return relative_age is None or relative_age <= FRESHNESS_WINDOW_HOURS
-
-    relative_age = _extract_relative_age_hours(combined)
-    if relative_age is not None:
-        return relative_age <= FRESHNESS_WINDOW_HOURS
-
-    return not require_date
-
-
-def _extract_relative_age_hours(text: str) -> float | None:
-    """
-    Extract the freshest visible relative timestamp from a snippet.
-    Returns None if no relative timestamp is present.
-    """
-    ages = []
-    for match in RELATIVE_TIME_RE.finditer(text):
-        immediate_marker, number, unit = match.groups()
-        if immediate_marker:
-            ages.append(0.0)
-            continue
-
-        quantity = int(number)
-        unit = unit.lower()
-        if unit.startswith(("minute", "min")):
-            ages.append(quantity / 60)
-        elif unit.startswith(("hour", "hr")):
-            ages.append(float(quantity))
-        elif unit.startswith("day"):
-            ages.append(quantity * 24.0)
-        elif unit.startswith("week"):
-            ages.append(quantity * 24.0 * 7)
-        elif unit.startswith("month"):
-            ages.append(quantity * 24.0 * 30)
-        elif unit.startswith("year"):
-            ages.append(quantity * 24.0 * 365)
-
-    return min(ages) if ages else None
+    return {
+        "title": topic,
+        "snippet": f"Latest developments in {topic}",
+        "source_url": "",
+        "source_text": "",
+        "source_word_count": 0,
+        "search_topic": topic,
+        "timestamp_utc": utc_now,
+    }
