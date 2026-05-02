@@ -27,6 +27,7 @@ logger = logging.getLogger("autoposting_agent.generator")
 
 MAX_RETRIES = 2
 TIMEOUT_SECONDS = 300  # 5 min — covers slow free-tier queuing + 900-word generation
+MIN_PUBLISH_WORDS = 500  # Minimum words to consider an article successful
 
 SYSTEM_PROMPT = """You are a senior journalist and editor at TodaysUS. Your ONLY job is to rewrite the provided source article into a high-quality, SEO-optimized news piece — staying 100% faithful to the source material.
 
@@ -59,43 +60,46 @@ PRO-GRADE HTML STRUCTURE:
 STRUCTURE_TEMPLATES = {
     "breaking_news": """
 HTML STRUCTURE GUIDELINES:
-  - <h2>[Primary Headline]</h2>
-  - [2-3 Paragraphs of Intro]
-  - <h3>[Dynamic Human Subheading about the event]</h3>
-  - <blockquote>[Key Quote or Paraphrased Statement]</blockquote>
-  - <h3>[Subheading about broader context]</h3>
-  - <ul>[List of 3-4 key facts]</ul>
-  - <h3>[Subheading about what to watch for]</h3>
-  - <h3>FAQ</h3>
-  - <h3>Related News</h3>
+  - <h2>Descriptive breaking news headline</h2>
+  - 2-3 Paragraphs of introduction explaining the 'what, when, and where'
+  - <h3>A subheading about the immediate impact of the event</h3>
+  - <blockquote>A key quote or paraphrased statement from an official source</blockquote>
+  - <h3>A subheading providing broader context or historical background</h3>
+  - <ul>A list of 3-4 key facts or figures from the story</ul>
+  - <h3>A subheading about what to watch for in the coming hours or days</h3>
+  - <h3>FAQ: Common questions about this event</h3>
+  - <h3>Related News: Contextual internal link</h3>
 """,
     "analysis": """
 HTML STRUCTURE GUIDELINES:
-  - <h2>[Analytical Headline]</h2>
-  - [Intro]
-  - <h3>[Subheading framing the central conflict]</h3>
-  - <ul>[List of relevant data points/numbers]</ul>
-  - <h3>[Subheading about the historical roots]</h3>
-  - <blockquote>[Expert perspective/analysis]</blockquote>
-  - <h3>[The road ahead]</h3>
-  - <h3>FAQ</h3>
-  - <h3>Related News</h3>
+  - <h2>A thoughtful, analytical headline</h2>
+  - Introduction framing the significance of the news
+  - <h3>A subheading detailing the central conflict or change</h3>
+  - <ul>A list of relevant data points, numbers, or statistics</ul>
+  - <h3>A subheading exploring the roots or causes of the situation</h3>
+  - <blockquote>An expert perspective or analytical takeaway</blockquote>
+  - <h3>The road ahead: Future implications</h3>
+  - <h3>FAQ: Key analytical questions answered</h3>
+  - <h3>Related News: Contextual internal link</h3>
 """,
     "explainer": """
 HTML STRUCTURE GUIDELINES:
-  - <h2>[Educational Title]</h2>
-  - [Intro]
+  - <h2>An educational and clear title</h2>
+  - Introduction explaining why this topic matters right now
   - <h3>The core issue in plain English</h3>
-  - <ul>[Bullet points of how it works]</ul>
-  - <h3>Why it’s hitting the headlines now</h3>
-  - blockquote[Policy or expert quote]
-  - <h3>What this means for your wallet/rights</h3>
-  - <h3>FAQ</h3>
-  - <h3>Related News</h3>
+  - <ul>Bullet points explaining how the process or technology works</ul>
+  - <h3>Why it is hitting the headlines now</h3>
+  - <blockquote>A quote from a policy expert or industry leader</blockquote>
+  - <h3>What this means for your daily life, rights, or finances</h3>
+  - <h3>FAQ: Everything you need to know</h3>
+  - <h3>Related News: Contextual internal link</h3>
 """,
 }
 
 GENERATION_PROMPT = """Rewrite the source article below into a polished, SEO-optimized 700-900 word news piece for TodaysUS. Your article must be grounded EXCLUSIVELY in the source text — do not add topics, technologies, or themes that are not present in the source.
+
+**Article Structure:** {structure_name}
+{structure_instructions}
 
 **Headline / Story:** {title}
 **Category:** {search_topic}
@@ -107,13 +111,13 @@ GENERATION_PROMPT = """Rewrite the source article below into a polished, SEO-opt
 STRICT INSTRUCTIONS:
 1. SINGLE TOPIC ONLY: This article covers exactly one story. Do not pivot to adjacent topics not in the source.
 2. KEY POINTS BOX: Start with a <h3>The Big Picture: Key Points</h3> followed by a <ul> of exactly 3 bullet points that summarize the source's main facts.
-3. 700-900 WORDS: Rewrite the source into a complete, well-structured piece. Expand on what the source says — do NOT invent new facts.
+3. 700-900 WORDS: Rewrite the source into a complete, well-structured piece. Expand on what the source says by providing deeper analysis of the facts provided, historical context mentioned in the source, and a thorough FAQ. Do NOT invent new facts.
 4. ENTITY ACCURACY: Use the exact names of people, companies, and places as they appear in the source.
 5. HUMAN TONE: Active voice. Varied sentence rhythm. Confident, non-repetitive.
 6. HTML FORMAT: Use <h2> for the main title, <h3> for subheadings, <blockquote> for quotes that exist in the source, <ul>/<li> for lists of facts from the source.
-7. FAQ: 3 questions a reader would ask about THIS specific story, answered from source facts only.
+7. FAQ: 3-4 questions a reader would ask about THIS specific story, answered from source facts only.
 8. RELATED NEWS: One internal link from the provided internal links list, only if it genuinely relates to this story's topic.
-9. WORD COUNT IS MANDATORY: You must produce at least 700 words. Do not use placeholders. Write the full analysis.
+9. WORD COUNT IS MANDATORY: You must produce at least 700 words. Do NOT use placeholders, do NOT use "...", and do NOT summarize. Write the full analysis.
 
 TITLE RULES:
 - 55-70 characters. Specific and accurate to the source story.
@@ -122,17 +126,22 @@ FEATURED SCORING:
 - 1-10. Based on: source accuracy, journalistic quality, SEO, entity precision.
 - score >= 8 -> "is_featured": true.
 
-JSON OUTPUT (VALID JSON ONLY; DO NOT OUTPUT RAW HTML OUTSIDE THIS OBJECT):
+JSON OUTPUT FORMAT (MANDATORY):
+1. Return a single, valid JSON object.
+2. The "content_html" field must be the full 700-900 word article in HTML.
+3. Use <h2> for the main headline, then the Key Points <ul>, then <h3> subheadings for the body.
+
+JSON Schema:
 {{
-    "title": "SEO-optimized headline matching the source story",
-    "excerpt": "Accurate 150-200 char summary",
-    "content_html": "<h2... Write the full 700-900 word article here. Do NOT use the word 'placeholder' or '...'. Write every paragraph in full detail.>",
-    "seo_title": "[Primary Keyword] | TodaysUS",
-    "seo_description": "Meta description...",
+    "title": "string (55-70 chars)",
+    "excerpt": "string (150-200 chars)",
+    "content_html": "string (full HTML article)",
+    "seo_title": "string",
+    "seo_description": "string",
     "category_slug": "news",
     "topics": ["topic1", "topic2"],
     "type": "{article_type}",
-    "quality_score": 8,
+    "quality_score": 9,
     "is_featured": true
 }}
 """
@@ -278,11 +287,12 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
         "Content-Type": "application/json",
     }
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    TOTAL_ATTEMPTS = 3
+    for attempt in range(1, TOTAL_ATTEMPTS + 1):
         try:
             logger.info(
                 f"🤖 Generating article via NVIDIA API "
-                f"(structure: {structure_name}, attempt {attempt}/{MAX_RETRIES})..."
+                f"(structure: {structure_name}, attempt {attempt}/{TOTAL_ATTEMPTS})..."
             )
             resp = requests.post(
                 NVIDIA_API_URL,
@@ -292,6 +302,11 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
             )
             resp.raise_for_status()
             data = resp.json()
+            
+            if "choices" not in data or not data["choices"]:
+                logger.error(f"Invalid response from NVIDIA API: {data}")
+                continue
+
             content = data["choices"][0]["message"]["content"].strip()
 
             # Strip markdown fences if present
@@ -308,15 +323,28 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
 
             try:
                 article_data = json.loads(content)
-            except json.JSONDecodeError:
-                article_data = json.loads(content, strict=False)
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON parse error on attempt {attempt}: {e}")
+                logger.debug(f"Raw content: {content}")
+                continue
+
+            # Content quality guards
+            content_html = article_data.get("content_html", "")
+            if "..." in content_html or "PLACEHOLDER" in content_html.upper() or "string (" in content_html:
+                logger.warning(f"⚠️  Detected placeholders or schema text in content on attempt {attempt}. Retrying...")
+                continue
+
+            word_count = len(content_html.split())
+            if word_count < MIN_PUBLISH_WORDS:
+                logger.warning(f"⚠️  Article too short ({word_count} words) on attempt {attempt}. Retrying...")
+                continue
 
             # Validate required fields
             required = ["title", "excerpt", "content_html", "category_slug", "topics"]
-            for field in required:
-                if field not in article_data:
-                    logger.error(f"Missing field in generated article: {field}")
-                    return None
+            missing_fields = [f for f in required if f not in article_data]
+            if missing_fields:
+                logger.error(f"Missing fields in generated article: {missing_fields}")
+                continue
 
             # Title length guard
             title = article_data["title"].strip()
@@ -359,27 +387,15 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
             return article_data
 
         except requests.exceptions.Timeout:
-            logger.warning(f"⏱️  Attempt {attempt}/{MAX_RETRIES} timed out after {TIMEOUT_SECONDS}s.")
-            if attempt < MAX_RETRIES:
-                logger.info("   Retrying...")
-                continue
-            logger.error("❌ All retry attempts timed out. Giving up.")
-            return None
+            logger.warning(f"⏱️  Attempt {attempt}/{TOTAL_ATTEMPTS} timed out.")
+            continue
 
         except requests.exceptions.RequestException as e:
             logger.error(f"NVIDIA API error (attempt {attempt}): {e}")
-            if attempt < MAX_RETRIES:
-                logger.info("   Retrying...")
-                continue
-            return None
-
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parse error: {e}")
-            logger.error(f"Raw content (first 800 chars): {content[:800]}")
-            return None
+            continue
 
         except Exception as e:
             logger.error(f"Unexpected error in generate_article: {e}", exc_info=True)
-            return None
+            continue
 
     return None  # exhausted all retries

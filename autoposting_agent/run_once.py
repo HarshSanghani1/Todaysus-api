@@ -22,7 +22,7 @@ _agent_dir = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_agent_dir, ".env"))
 load_dotenv()
 
-from autoposting_agent.article_generator import generate_article
+from autoposting_agent.article_generator import MIN_PUBLISH_WORDS, generate_article
 from autoposting_agent.config import NVIDIA_API_KEY
 from autoposting_agent.publisher import ensure_topics_exist, get_internal_links, is_duplicate, publish_article
 from autoposting_agent.web_searcher import MIN_SOURCE_WORDS, scrape_source_url, search_trending_topic
@@ -165,6 +165,14 @@ def run_once() -> None:
     if is_duplicate(article_data["title"]):
         logger.warning("Duplicate: %s. Skipping.", article_data["title"])
         sys.exit(0)
+
+    if word_count < MIN_PUBLISH_WORDS:
+        logger.error("❌ Article below publishable length (%s words; minimum %s). Skipping publish.", word_count, MIN_PUBLISH_WORDS)
+        sys.exit(1)
+
+    if "..." in article_data.get("content_html", "") or "FULL_HTML" in article_data.get("content_html", ""):
+        logger.error("❌ Article contains placeholders. Skipping publish.")
+        sys.exit(1)
 
     logger.info("Step 4/4: Publishing to MongoDB...")
     result = publish_article(article_data)
