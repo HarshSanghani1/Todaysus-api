@@ -31,30 +31,15 @@ MIN_PUBLISH_WORDS = 500  # Minimum words to consider an article successful
 
 SYSTEM_PROMPT = """You are a senior journalist and editor at TodaysUS. Your ONLY job is to rewrite the provided source article into a high-quality, SEO-optimized news piece — staying 100% faithful to the source material.
 
-CRITICAL GROUNDING RULES (violating these is a failure):
-1. STAY ON TOPIC: Only write about what is explicitly described in the SOURCE TEXT below. Do not introduce new subjects, technologies, companies, or concepts that are not in the source.
-2. NO INVENTION: Never add facts, quotes, statistics, or opinions that are not directly supported by the source text. If the source doesn't mention AI, do not mention AI.
-3. NO TOPIC DRIFT: The article must cover ONE story — the story from the source. Do not try to cover "related" or "broader" themes unless they are directly discussed in the source.
-4. ONE SUBJECT: If the source is about GM delaying electric trucks, the article is ONLY about that. Do not pivot to battery technology trends, AI in EVs, or competitor strategies unless the source explicitly covers those.
+FORMATTING RULES (MANDATORY):
+1. VALID JSON: You must return a single, valid JSON object.
+2. ESCAPING: You must escape all double quotes (") inside the JSON strings with a backslash (\\").
+3. NO CONVERSATION: Do not include any text outside the JSON object.
 
-JOURNALISTIC STANDARDS:
-1. AUTHORITATIVE TONE: Write as a subject-matter expert. Use declarative, confident language.
-2. ENTITY FOCUS: Use full names of real people, organizations, and locations mentioned in the source.
-3. HUMAN WRITING: Vary sentence length. Mix short punchy sentences with deeper analytical ones. No AI-sounding cadence.
-4. IMPACT FIRST: In the first 150 words, state why this story matters to Americans.
-
-SEO RULES:
-1. KEYWORD PLACEMENT: Use the primary keyword from the headline naturally in the first paragraph and in at least two <h3> subheadings.
-2. READABILITY: Active voice. Short paragraphs (3-4 sentences max). Strategic whitespace.
-3. INTERNAL LINKING: Use <a href="URL"><u>Anchor Text</u></a> for provided internal links — only insert them where they fit the article's actual subject matter.
-
-PRO-GRADE HTML STRUCTURE:
-1. HEADLINE (h2): 55-70 characters. Specific to THIS story.
-2. KEY TAKEAWAYS (ul): 3 bullet points summarizing the source article's main facts, right after the <h2>.
-3. SUBHEADINGS (h3): Descriptive, keyword-rich, human-sounding. Reflect the source's actual content.
-4. BLOCKQUOTES: Use for real quotes or paraphrased statements from people/organizations in the source.
-5. FAQ (h3): 3-4 questions that readers would ask about THIS specific story.
-6. RELATED NEWS (h3): One internal link relevant to this story's actual topic.
+CRITICAL GROUNDING RULES:
+1. STAY ON TOPIC: Only write about what is explicitly described in the SOURCE TEXT.
+2. NO INVENTION: Never add facts, quotes, or statistics not in the source.
+3. ENTITY FOCUS: Use full names of people, organizations, and locations from the source.
 """
 
 STRUCTURE_TEMPLATES = {
@@ -102,7 +87,8 @@ GENERATION_PROMPT = """Rewrite the source article below into a polished, SEO-opt
 {structure_instructions}
 
 **Headline / Story:** {title}
-**Category:** {search_topic}
+**Topic Context:** {search_topic}
+**Available Categories (Pick the most accurate slug):** {categories_list}
 
 --- SOURCE ARTICLE (base your entire article on THIS content only) ---
 {source_text}
@@ -138,7 +124,7 @@ JSON Schema:
     "content_html": "string (full HTML article)",
     "seo_title": "string",
     "seo_description": "string",
-    "category_slug": "news",
+    "category_slug": "ONE_SLUG_FROM_THE_AVAILABLE_CATEGORIES_LIST",
     "topics": ["topic1", "topic2"],
     "type": "{article_type}",
     "quality_score": 9,
@@ -259,6 +245,8 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
     if len(source_text) > 8000:
         source_text = source_text[:8000].rsplit(" ", 1)[0] + "..."
 
+    categories_list = ", ".join([c["slug"] for c in CATEGORIES])
+
     prompt = GENERATION_PROMPT.format(
         title=search_result["title"],
         snippet=search_result.get("snippet", ""),
@@ -267,6 +255,7 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
         structure_name=structure_name.replace("_", " ").title(),
         structure_instructions=structure_instructions,
         article_type=article_type,
+        categories_list=categories_list,
     )
 
     if internal_link_hint:
@@ -322,7 +311,7 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
             content = _fix_control_chars(content)
 
             try:
-                article_data = json.loads(content)
+                article_data = json.loads(content, strict=False)
             except json.JSONDecodeError as e:
                 logger.error(f"JSON parse error on attempt {attempt}: {e}")
                 logger.debug(f"Raw content: {content}")

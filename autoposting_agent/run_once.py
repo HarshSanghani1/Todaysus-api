@@ -154,7 +154,8 @@ def run_once() -> None:
     structure = article_data.get("article_structure", "unknown")
 
     logger.info("Generated title (%s chars): %s", len(title), title)
-    logger.info("Structure: %s | Quality: %s/10 | Featured: %s", structure, quality, featured)
+    category_name = article_data.get("category", {}).get("name", "Unknown")
+    logger.info("Structure: %s | Quality: %s/10 | Category: %s | Featured: %s", structure, quality, category_name, featured)
     logger.info("Generated article length: ~%s words", word_count)
     logger.info("Grounded on: %s (%s source words)", article_data.get("source_url", ""), source_words)
 
