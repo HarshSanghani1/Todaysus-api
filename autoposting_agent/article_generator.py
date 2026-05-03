@@ -46,38 +46,44 @@ STRUCTURE_TEMPLATES = {
     "breaking_news": """
 HTML STRUCTURE GUIDELINES:
   - <h2>Descriptive breaking news headline</h2>
-  - 2-3 Paragraphs of introduction explaining the 'what, when, and where'
+  - 3-4 Paragraphs of introduction explaining the 'what, when, and where'
   - <h3>A subheading about the immediate impact of the event</h3>
+  - 3-4 Paragraphs of deep analysis and narrative text.
   - <blockquote>A key quote or paraphrased statement from an official source</blockquote>
   - <h3>A subheading providing broader context or historical background</h3>
+  - 3-4 Paragraphs of deep context and narrative text.
   - <ul>A list of 3-4 key facts or figures from the story</ul>
   - <h3>A subheading about what to watch for in the coming hours or days</h3>
+  - 3-4 Paragraphs of future outlook and narrative text.
   - <h3>FAQ: Common questions about this event</h3>
-  - <h3>Related News: Contextual internal link</h3>
 """,
     "analysis": """
 HTML STRUCTURE GUIDELINES:
   - <h2>A thoughtful, analytical headline</h2>
-  - Introduction framing the significance of the news
+  - 3-4 Paragraphs of introduction framing the significance of the news
   - <h3>A subheading detailing the central conflict or change</h3>
+  - 3-4 Paragraphs of deep analysis and narrative text.
   - <ul>A list of relevant data points, numbers, or statistics</ul>
   - <h3>A subheading exploring the roots or causes of the situation</h3>
+  - 3-4 Paragraphs of historical context and narrative text.
   - <blockquote>An expert perspective or analytical takeaway</blockquote>
   - <h3>The road ahead: Future implications</h3>
+  - 3-4 Paragraphs of future implications and narrative text.
   - <h3>FAQ: Key analytical questions answered</h3>
-  - <h3>Related News: Contextual internal link</h3>
 """,
     "explainer": """
 HTML STRUCTURE GUIDELINES:
   - <h2>An educational and clear title</h2>
-  - Introduction explaining why this topic matters right now
+  - 3-4 Paragraphs of introduction explaining why this topic matters right now
   - <h3>The core issue in plain English</h3>
+  - 3-4 Paragraphs of explanation and narrative text.
   - <ul>Bullet points explaining how the process or technology works</ul>
   - <h3>Why it is hitting the headlines now</h3>
+  - 3-4 Paragraphs of contemporary context and narrative text.
   - <blockquote>A quote from a policy expert or industry leader</blockquote>
   - <h3>What this means for your daily life, rights, or finances</h3>
+  - 3-4 Paragraphs of impact analysis and narrative text.
   - <h3>FAQ: Everything you need to know</h3>
-  - <h3>Related News: Contextual internal link</h3>
 """,
 }
 
@@ -105,6 +111,8 @@ STRICT INSTRUCTIONS:
 8. RELATED NEWS: One internal link from the provided internal links list, only if it genuinely relates to this story's topic.
 9. WORD COUNT IS MANDATORY: You must produce at least 700 words. Do NOT use placeholders, do NOT use "...", and do NOT summarize. Write the full analysis.
 10. STRUCTURED DATA FOR AI (GEO): Provide exactly 3 key points and 3-4 FAQs in the separate JSON fields "key_points" and "faqs". This data is crucial for Generative Engine Optimization (GEO) schema generation.
+11. NO EMPTY HEADINGS: Every <h2> or <h3> MUST be immediately followed by at least 2-3 paragraphs (<p>) of rich narrative text. Do NOT output consecutive headings or headings followed immediately by lists without paragraph text.
+12. NO BOILERPLATE: Do not add promotional footers like "Stay connected with Today's US...". Write only the journalistic article.
 
 TITLE RULES:
 - 55-70 characters. Specific and accurate to the source story.
@@ -340,11 +348,7 @@ def generate_article(search_result: dict, internal_links: list[dict] | None = No
 
             # Title length guard
             title = article_data["title"].strip()
-            if len(title) < 40:
-                logger.warning(f"⚠️  Title too short ({len(title)} chars): '{title}' — padding")
-                title = f"{title} — What Americans Need to Know"
-                article_data["title"] = title
-            elif len(title) > 80:
+            if len(title) > 80:
                 title = title[:77].rsplit(" ", 1)[0] + "..."
                 article_data["title"] = title
             logger.info(f"   Title ({len(article_data['title'])} chars): {article_data['title']}")

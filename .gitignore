@@ -7,3 +7,6 @@ service_account.json
 *.log
 venv/
 revie.md
+*.md
+updated_urls.txt
+export_urls.py
