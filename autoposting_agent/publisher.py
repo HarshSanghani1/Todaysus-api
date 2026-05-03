@@ -258,6 +258,8 @@ def publish_article(article_data: dict) -> dict | None:
                 "slug": "world",
             }),
             "topics": article_data.get("topics", []),
+            "faqs": article_data.get("faqs", []),
+            "key_points": article_data.get("key_points", []),
 
             # Flags
             "is_featured": is_featured,

@@ -6,3 +6,4 @@ instance/
 service_account.json
 *.log
 venv/
+revie.md

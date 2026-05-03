@@ -39,10 +39,12 @@ def build_news_article_schema(article: dict, canonical_url: str | None = None) -
     category = article.get("category") or {}
     topics = article.get("topics") or []
     image_url = article.get("featured_image")
+    faqs = article.get("faqs") or []
 
-    schema = {
-        "@context": "https://schema.org",
+    news_article = {
         "@type": "NewsArticle",
+        "inLanguage": "en-US",
+        "isAccessibleForFree": True,
         "mainEntityOfPage": {
             "@type": "WebPage",
             "@id": canonical_url,
@@ -50,6 +52,7 @@ def build_news_article_schema(article: dict, canonical_url: str | None = None) -
         "url": canonical_url,
         "headline": article.get("seo_title") or article.get("title", ""),
         "description": article.get("seo_description") or article.get("excerpt", ""),
+        "abstract": article.get("excerpt", ""),
         "datePublished": _iso(article.get("published_at") or article.get("created_at")),
         "dateModified": _iso(article.get("updated_at") or article.get("published_at")),
         "author": {
@@ -63,13 +66,44 @@ def build_news_article_schema(article: dict, canonical_url: str | None = None) -
             "url": get_site_base_url(),
         },
         "articleSection": category.get("name") or category.get("slug") or "News",
-        "keywords": [topic.get("name", "") for topic in topics if isinstance(topic, dict) and topic.get("name")],
+        "keywords": ", ".join([topic.get("name", "") for topic in topics if isinstance(topic, dict) and topic.get("name")]),
+        "about": [
+            {
+                "@type": "Thing",
+                "name": topic.get("name", ""),
+                "url": f"{get_site_base_url()}/topics/{topic.get('slug')}"
+            }
+            for topic in topics if isinstance(topic, dict) and topic.get("name") and topic.get("slug")
+        ]
     }
 
     if image_url:
-        schema["image"] = [image_url]
+        news_article["image"] = [image_url]
 
-    return schema
+    graph = [news_article]
+
+    if faqs and isinstance(faqs, list) and len(faqs) > 0:
+        faq_schema = {
+            "@type": "FAQPage",
+            "mainEntity": [
+                {
+                    "@type": "Question",
+                    "name": faq.get("question", ""),
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": faq.get("answer", "")
+                    }
+                }
+                for faq in faqs if isinstance(faq, dict) and faq.get("question") and faq.get("answer")
+            ]
+        }
+        if faq_schema["mainEntity"]:
+            graph.append(faq_schema)
+
+    return {
+        "@context": "https://schema.org",
+        "@graph": graph
+    }
 
 
 def _iso(value) -> str | None:

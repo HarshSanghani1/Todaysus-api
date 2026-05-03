@@ -104,6 +104,7 @@ STRICT INSTRUCTIONS:
 7. FAQ: 3-4 questions a reader would ask about THIS specific story, answered from source facts only.
 8. RELATED NEWS: One internal link from the provided internal links list, only if it genuinely relates to this story's topic.
 9. WORD COUNT IS MANDATORY: You must produce at least 700 words. Do NOT use placeholders, do NOT use "...", and do NOT summarize. Write the full analysis.
+10. STRUCTURED DATA FOR AI (GEO): Provide exactly 3 key points and 3-4 FAQs in the separate JSON fields "key_points" and "faqs". This data is crucial for Generative Engine Optimization (GEO) schema generation.
 
 TITLE RULES:
 - 55-70 characters. Specific and accurate to the source story.
@@ -126,6 +127,8 @@ JSON Schema:
     "seo_description": "string",
     "category_slug": "ONE_SLUG_FROM_THE_AVAILABLE_CATEGORIES_LIST",
     "topics": ["topic1", "topic2"],
+    "faqs": [{{"question": "string", "answer": "string"}}],
+    "key_points": ["string", "string", "string"],
     "type": "{article_type}",
     "quality_score": 9,
     "is_featured": true

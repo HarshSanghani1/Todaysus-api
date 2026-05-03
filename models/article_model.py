@@ -55,6 +55,8 @@ def create_article(data):
         "author": data["author"],
         "category": data["category"],
         "topics": data.get("topics", []),
+        "faqs": data.get("faqs", []),
+        "key_points": data.get("key_points", []),
 
         # Flags
         "is_featured": data.get("is_featured", False),
